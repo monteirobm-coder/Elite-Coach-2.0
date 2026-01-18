@@ -1,20 +1,18 @@
 import { GoogleGenAI } from "@google/genai";
 import { Workout, UserProfile, TrainingGoal } from "../types";
 
-// Inicializa o cliente Google GenAI de forma segura
-// O vite.config.ts injeta o valor de process.env.API_KEY
-const apiKey = process.env.API_KEY || '';
-const ai = apiKey && apiKey !== 'undefined' ? new GoogleGenAI({ apiKey }) : null;
+// Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+// Assume API_KEY is provided via Vite's define in vite.config.ts and is valid.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Realiza análise profunda de biomecânica e fisiologia usando Gemini.
+ * Uses 'gemini-3-pro-preview' for complex athletic data reasoning.
  */
 export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, previous: Workout[]): Promise<string> => {
-  if (!ai) return "Análise indisponível: API Key do Gemini não configurada ou inválida.";
-
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Atualizado para o modelo recomendado
+      model: 'gemini-3-pro-preview',
       contents: [{
         role: 'user',
         parts: [{
@@ -42,6 +40,7 @@ export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, p
       }]
     });
     
+    // Always use .text property (not a method) on GenerateContentResponse
     return response.text ?? "Não foi possível gerar a análise no momento.";
   } catch (error) {
     console.error("Erro no Gemini:", error);
@@ -51,19 +50,19 @@ export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, p
 
 /**
  * Chat interativo sobre um treino específico.
+ * Uses 'gemini-3-flash-preview' for standard conversational tasks.
  */
 export const askCoachAboutWorkout = async (message: string, workout: Workout, profile: UserProfile, history: any[]): Promise<string> => {
-  if (!ai) return "IA desativada. Verifique a API Key.";
-
   try {
     const chat = ai.chats.create({
-      model: 'gemini-3-flash-preview', // Atualizado para o modelo recomendado
+      model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: `Você é o Coach de Corrida do ${profile.name}. Você tem acesso aos dados do treino dele de ${workout.date} (${workout.type}, ${workout.distance}km, pace ${workout.avgPace}). Seja motivador mas técnico.`
       }
     });
 
     const response = await chat.sendMessage({ message });
+    // Always use .text property (not a method) on GenerateContentResponse
     return response.text ?? "O Coach está sem palavras no momento.";
   } catch (error) {
     console.error("Erro no chat:", error);
@@ -73,13 +72,12 @@ export const askCoachAboutWorkout = async (message: string, workout: Workout, pr
 
 /**
  * Gera um plano de treinamento completo.
+ * Uses 'gemini-3-pro-preview' for advanced reasoning and training cycle planning.
  */
 export const generateTrainingPlan = async (profile: UserProfile, goals: TrainingGoal[], history: Workout[]): Promise<string> => {
-  if (!ai) return "API Key não encontrada. Configure as variáveis de ambiente.";
-
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Atualizado para o modelo recomendado
+      model: 'gemini-3-pro-preview',
       contents: [{
         role: 'user',
         parts: [{
@@ -94,6 +92,7 @@ export const generateTrainingPlan = async (profile: UserProfile, goals: Training
         }]
       }]
     });
+    // Always use .text property (not a method) on GenerateContentResponse
     return response.text ?? "Erro ao gerar o plano. Tente novamente.";
   } catch (error) {
     console.error("Erro ao gerar plano:", error);
