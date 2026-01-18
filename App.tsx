@@ -8,7 +8,9 @@ import {
   Zap,
   Loader2,
   RefreshCw,
-  Database
+  Database,
+  Menu,
+  X
 } from 'lucide-react';
 import { UserProfile, Workout, TrainingGoal } from './types';
 import Dashboard from './pages/Dashboard';
@@ -26,6 +28,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [dbConnected, setDbConnected] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   const [profile, setProfile] = useState<UserProfile>({
     name: 'Bruno Monteiro',
@@ -119,6 +122,12 @@ const App: React.FC = () => {
     { id: 'g2', title: 'Maratona de SP', targetDate: '2025-04-15', targetValue: '03:15:00', progress: 20 }
   ]);
 
+  const handleTabChange = (tab: typeof activeTab) => {
+    setActiveTab(tab);
+    setShowProfile(false);
+    setIsMenuOpen(false); // Auto-hide menu on mobile after selection
+  };
+
   const renderContent = () => {
     if (showProfile) return <Profile profile={profile} onUpdate={handleUpdateProfile} onClose={() => setShowProfile(false)} />;
 
@@ -137,9 +146,9 @@ const App: React.FC = () => {
           <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Database className="text-amber-500" size={20} />
-              <div>
+              <div className="hidden sm:block">
                 <p className="text-amber-500 font-bold text-sm uppercase tracking-tighter">Modo Offline / Demonstração</p>
-                <p className="text-slate-500 text-xs">As chaves do Supabase não foram detectadas neste ambiente.</p>
+                <p className="text-slate-500 text-xs">As chaves do Supabase não foram detectadas.</p>
               </div>
             </div>
             <a href="https://vercel.com" target="_blank" className="text-[10px] font-black uppercase bg-amber-500 text-slate-950 px-3 py-1 rounded-lg">Como conectar?</a>
@@ -157,44 +166,71 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <aside className="w-64 glass border-r border-slate-800 flex flex-col z-20">
+      {/* Sidebar / Drawer */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 glass border-r border-slate-800 flex flex-col transition-transform duration-300 lg:static lg:translate-x-0 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6">
-          <div className="flex items-center gap-3 text-emerald-500 mb-8">
-            <Zap size={32} fill="currentColor" />
-            <h1 className="font-bold text-xl tracking-tight uppercase leading-none">Elite Run<br/><span className="text-[10px] opacity-50 tracking-[0.3em]">Coach AI</span></h1>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3 text-emerald-500">
+              <Zap size={32} fill="currentColor" />
+              <h1 className="font-bold text-xl tracking-tight uppercase leading-none">Elite Run<br/><span className="text-[10px] opacity-50 tracking-[0.3em]">Coach AI</span></h1>
+            </div>
+            <button onClick={() => setIsMenuOpen(false)} className="lg:hidden p-2 text-slate-400 hover:text-white">
+              <X size={24} />
+            </button>
           </div>
           
           <nav className="space-y-1">
-            <button onClick={() => { setActiveTab('dashboard'); setShowProfile(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><BarChart3 size={20} /> <span className="font-medium">Dashboard</span></button>
-            <button onClick={() => { setActiveTab('treinos'); setShowProfile(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'treinos' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Activity size={20} /> <span className="font-medium">Treinos</span></button>
-            <button onClick={() => { setActiveTab('metas'); setShowProfile(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'metas' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Target size={20} /> <span className="font-medium">Metas</span></button>
-            <button onClick={() => { setActiveTab('calendario'); setShowProfile(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'calendario' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Calendar size={20} /> <span className="font-medium">Calendário</span></button>
-            <button onClick={() => { setActiveTab('plano'); setShowProfile(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'plano' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Map size={20} /> <span className="font-medium">Plano IA</span></button>
+            <button onClick={() => handleTabChange('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><BarChart3 size={20} /> <span className="font-medium">Dashboard</span></button>
+            <button onClick={() => handleTabChange('treinos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'treinos' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Activity size={20} /> <span className="font-medium">Treinos</span></button>
+            <button onClick={() => handleTabChange('metas')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'metas' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Target size={20} /> <span className="font-medium">Metas</span></button>
+            <button onClick={() => handleTabChange('calendario')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'calendario' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Calendar size={20} /> <span className="font-medium">Calendário</span></button>
+            <button onClick={() => handleTabChange('plano')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'plano' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Map size={20} /> <span className="font-medium">Plano IA</span></button>
           </nav>
         </div>
 
         <div className="mt-auto p-6">
           <button 
-            onClick={() => loadData(true)} 
+            onClick={() => { loadData(true); setIsMenuOpen(false); }} 
             disabled={isRefreshing || !dbConnected}
             className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition-all border border-slate-700 disabled:opacity-20"
           >
             <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
-            {isRefreshing ? 'Sincronizando...' : 'Sincronizar Cloud'}
+            <span className="truncate">{isRefreshing ? 'Sincronizando...' : 'Sincronizar Cloud'}</span>
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto relative">
-        <header className="sticky top-0 z-10 p-6 flex justify-between items-center pointer-events-none">
-          <div className="pointer-events-auto">
-             <h2 className="text-2xl font-bold capitalize">{showProfile ? 'Perfil' : activeTab}</h2>
+      {/* Overlay for mobile menu */}
+      {isMenuOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setIsMenuOpen(false)}
+        />
+      )}
+
+      <main className="flex-1 overflow-y-auto relative flex flex-col">
+        <header className="sticky top-0 z-30 p-4 lg:p-6 flex justify-between items-center bg-slate-950/80 backdrop-blur-md border-b border-slate-900 lg:bg-transparent lg:border-none">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsMenuOpen(true)}
+              className="lg:hidden p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300"
+            >
+              <Menu size={24} />
+            </button>
+            <h2 className="text-xl lg:text-2xl font-bold capitalize truncate">
+              {showProfile ? 'Perfil' : activeTab}
+            </h2>
           </div>
-          <button onClick={() => setShowProfile(!showProfile)} className={`pointer-events-auto w-12 h-12 rounded-full border-2 transition-all flex items-center justify-center overflow-hidden bg-slate-800 ${showProfile ? 'border-emerald-500 scale-110' : 'border-slate-700 hover:border-slate-500'}`}>
+          
+          <button 
+            onClick={() => { setShowProfile(!showProfile); setIsMenuOpen(false); }} 
+            className={`w-10 h-10 lg:w-12 lg:h-12 rounded-full border-2 transition-all flex items-center justify-center overflow-hidden bg-slate-800 ${showProfile ? 'border-emerald-500 scale-110' : 'border-slate-700 hover:border-slate-500'}`}
+          >
             <img src={profile.photoUrl || `https://picsum.photos/seed/${profile.name}/100/100`} alt="Profile" className="w-full h-full object-cover" />
           </button>
         </header>
-        <div className="px-6 pb-12">{renderContent()}</div>
+
+        <div className="px-4 lg:px-6 pb-12 flex-1">{renderContent()}</div>
       </main>
     </div>
   );
