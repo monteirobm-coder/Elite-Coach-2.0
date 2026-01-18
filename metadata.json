@@ -1,0 +1,7 @@
+{
+  "name": "Elite Run Coach AI 2.0",
+  "description": "Seu treinador de elite pessoal que analisa dados biomecânicos e de performance do seu Garmin Forerunner 965 para otimizar sua corrida.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
