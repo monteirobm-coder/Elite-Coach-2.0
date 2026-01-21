@@ -1,25 +1,29 @@
 import { GoogleGenAI } from "@google/genai";
 import { Workout, UserProfile, TrainingGoal } from "../types";
 
-// Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
-// Assume API_KEY is provided via Vite's define in vite.config.ts and is valid.
+// Inicialização recomendada usando a variável de ambiente process.env.API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Realiza análise profunda de biomecânica e fisiologia usando Gemini.
- * Uses 'gemini-3-pro-preview' for complex athletic data reasoning.
+ * Alterado para 'gemini-3-flash-preview' para maior estabilidade em produção.
  */
 export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, previous: Workout[]): Promise<string> => {
   try {
+    // Verificação básica de dados para evitar prompt vazio
+    const cadence = workout.biomechanics?.cadence || "N/A";
+    const oscillation = workout.biomechanics?.verticalOscillation || "N/A";
+    const gct = workout.biomechanics?.groundContactTime || "N/A";
+
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: [{
         role: 'user',
         parts: [{
           text: `
             Atue como um Head Coach de Corrida de Elite. Analise o seguinte treino e forneça um feedback técnico conciso e acionável.
 
-            ATLETA: ${profile.name}, ${profile.age} anos, Nível ${profile.experience}.
+            ATLETA: ${profile.name}, Nível ${profile.experience}.
             PERFIL: VO2 Max ${profile.vo2Max}, Limiar Lactato ${profile.lactateThresholdPace}.
 
             TREINO ATUAL:
@@ -27,30 +31,31 @@ export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, p
             - Distância: ${workout.distance} km
             - Pace Médio: ${workout.avgPace}
             - FC Média: ${workout.avgHR} bpm
-            - Biomecânica: Cadência ${workout.biomechanics?.cadence}, Oscilação ${workout.biomechanics?.verticalOscillation}cm, Contato Solo ${workout.biomechanics?.groundContactTime}ms.
+            - Biomecânica: Cadência ${cadence}, Oscilação ${oscillation}cm, Contato Solo ${gct}ms.
 
-            HISTÓRICO RECENTE: ${previous.length} treinos realizados.
+            HISTÓRICO RECENTE: Analise com base nos últimos ${previous.length} treinos fornecidos no contexto.
 
-            Forneça:
-            1. Análise da Intensidade (estava na zona correta?)
-            2. Insight Biomecânico (cadência/oscilação)
-            3. Recomendação para o próximo treino.
+            Forneça em formato Markdown:
+            1. **Análise da Intensidade** (estava na zona correta para o tipo ${workout.type}?)
+            2. **Insight Biomecânico** (foco em eficiência)
+            3. **Recomendação Próximo Passo**.
           `
         }]
       }]
     });
     
-    // Always use .text property (not a method) on GenerateContentResponse
-    return response.text ?? "Não foi possível gerar a análise no momento.";
-  } catch (error) {
-    console.error("Erro no Gemini:", error);
-    return "Erro ao processar análise com IA. Verifique sua conexão.";
+    return response.text ?? "Não foi possível gerar a análise. Tente novamente.";
+  } catch (error: any) {
+    console.error("Erro detalhado no Gemini Analysis:", error);
+    if (error.message?.includes("model")) {
+      return "Erro: Modelo de IA temporariamente indisponível para análise profunda.";
+    }
+    return "Erro ao processar análise. Verifique se os dados do treino estão completos.";
   }
 };
 
 /**
  * Chat interativo sobre um treino específico.
- * Uses 'gemini-3-flash-preview' for standard conversational tasks.
  */
 export const askCoachAboutWorkout = async (message: string, workout: Workout, profile: UserProfile, history: any[]): Promise<string> => {
   try {
@@ -62,8 +67,7 @@ export const askCoachAboutWorkout = async (message: string, workout: Workout, pr
     });
 
     const response = await chat.sendMessage({ message });
-    // Always use .text property (not a method) on GenerateContentResponse
-    return response.text ?? "O Coach está sem palavras no momento.";
+    return response.text ?? "O Coach está processando sua dúvida...";
   } catch (error) {
     console.error("Erro no chat:", error);
     return "Desculpe, tive um problema na conexão com o treinador.";
@@ -72,12 +76,11 @@ export const askCoachAboutWorkout = async (message: string, workout: Workout, pr
 
 /**
  * Gera um plano de treinamento completo.
- * Uses 'gemini-3-pro-preview' for advanced reasoning and training cycle planning.
  */
 export const generateTrainingPlan = async (profile: UserProfile, goals: TrainingGoal[], history: Workout[]): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: [{
         role: 'user',
         parts: [{
@@ -92,8 +95,7 @@ export const generateTrainingPlan = async (profile: UserProfile, goals: Training
         }]
       }]
     });
-    // Always use .text property (not a method) on GenerateContentResponse
-    return response.text ?? "Erro ao gerar o plano. Tente novamente.";
+    return response.text ?? "Erro ao gerar o plano semanal.";
   } catch (error) {
     console.error("Erro ao gerar plano:", error);
     return "Não foi possível criar o plano agora. Tente novamente mais tarde.";

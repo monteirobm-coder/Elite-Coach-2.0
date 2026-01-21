@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ChevronRight, 
   Search, 
@@ -7,19 +7,17 @@ import {
   Clock, 
   Sparkles,
   Loader2,
-  Wind,
   Layers,
-  MoveHorizontal,
   RefreshCw,
   TrendingUp,
   Map,
   Timer,
   Heart,
   Send,
-  MessageSquare,
-  User,
   Flag,
-  ArrowLeft
+  ArrowLeft,
+  CalendarDays,
+  Filter
 } from 'lucide-react';
 import { Workout, UserProfile } from '../types';
 import { getCoachAnalysis, askCoachAboutWorkout } from '../services/geminiService';
@@ -34,11 +32,31 @@ interface TreinosProps {
   profile: UserProfile;
 }
 
+const MONTHS = [
+  { value: 'all', label: 'Todos os Meses' },
+  { value: '0', label: 'Janeiro' },
+  { value: '1', label: 'Fevereiro' },
+  { value: '2', label: 'Março' },
+  { value: '3', label: 'Abril' },
+  { value: '4', label: 'Maio' },
+  { value: '5', label: 'Junho' },
+  { value: '6', label: 'Julho' },
+  { value: '7', label: 'Agosto' },
+  { value: '8', label: 'Setembro' },
+  { value: '9', label: 'Outubro' },
+  { value: '10', label: 'Novembro' },
+  { value: '11', label: 'Dezembro' },
+];
+
 const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile }) => {
-  const [workouts, setWorkouts] = useState<Workout[]>(initialWorkouts);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [insights, setInsights] = useState<string | null>(null);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  
+  // Estados de Filtro
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMonth, setFilterMonth] = useState('all');
+  const [filterYear, setFilterYear] = useState('all');
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
@@ -46,16 +64,30 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
   const [isSending, setIsSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setWorkouts(initialWorkouts);
+  // Anos disponíveis nos treinos para o seletor
+  const availableYears = useMemo(() => {
+    const years = initialWorkouts.map(w => new Date(w.date).getFullYear());
+    return Array.from(new Set(years)).sort((a: number, b: number) => b - a);
   }, [initialWorkouts]);
+
+  // Lógica de Filtragem Combinada
+  const filteredWorkouts = useMemo(() => {
+    return initialWorkouts.filter(workout => {
+      const workoutDate = new Date(workout.date);
+      const matchesSearch = workout.type.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            workout.distance.toString().includes(searchQuery);
+      const matchesMonth = filterMonth === 'all' || workoutDate.getMonth().toString() === filterMonth;
+      const matchesYear = filterYear === 'all' || workoutDate.getFullYear().toString() === filterYear;
+      
+      return matchesSearch && matchesMonth && matchesYear;
+    });
+  }, [initialWorkouts, searchQuery, filterMonth, filterYear]);
 
   useEffect(() => {
     if (selectedWorkout) {
       setInsights(selectedWorkout.aiAnalysis || null);
       setChatMessages([]);
       setUserInput('');
-      // No mobile, rola para o topo ao selecionar
       if (window.innerWidth < 1024) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -69,10 +101,16 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
   const handleFetchInsights = async (workout: Workout) => {
     setIsLoadingInsights(true);
     try {
-      const result = await getCoachAnalysis(workout, profile, workouts.filter(w => w.id !== workout.id));
+      // Otimização: Passar apenas os últimos 5 treinos como histórico para evitar estouro de tokens
+      const recentHistory = initialWorkouts
+        .filter(w => w.id !== workout.id)
+        .slice(0, 5);
+
+      const result = await getCoachAnalysis(workout, profile, recentHistory);
       setInsights(result);
     } catch (err) {
       console.error("Erro ao buscar insights:", err);
+      setInsights("Erro ao conectar com o Coach. Tente novamente em instantes.");
     } finally {
       setIsLoadingInsights(false);
     }
@@ -109,23 +147,70 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
     }
   };
 
+  const selectClasses = "bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-xs font-bold text-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none transition-all cursor-pointer appearance-none pr-8 relative";
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start relative">
-      {/* Lista de Treinos - Oculta no mobile se um treino estiver selecionado */}
       <div className={`space-y-4 ${selectedWorkout ? 'hidden lg:block' : 'block'}`}>
-        <div className="flex gap-2 mb-6">
-          <div className="relative flex-1">
+        <div className="space-y-3 mb-6">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
               type="text" 
-              placeholder="Pesquisar treinos..." 
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+              placeholder="Pesquisar por tipo ou distância..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
             />
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <div className="relative flex-1 min-w-[140px]">
+              <CalendarDays className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" size={14} />
+              <select 
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className={`w-full ${selectClasses}`}
+              >
+                {MONTHS.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative flex-1 min-w-[100px]">
+              <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" size={14} />
+              <select 
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+                className={`w-full ${selectClasses}`}
+              >
+                <option value="all">Anos</option>
+                {availableYears.map(year => (
+                  <option key={year} value={year.toString()}>{year}</option>
+                ))}
+              </select>
+            </div>
+            
+            {(filterMonth !== 'all' || filterYear !== 'all' || searchQuery !== '') && (
+              <button 
+                onClick={() => { setFilterMonth('all'); setFilterYear('all'); setSearchQuery(''); }}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+          
+          <div className="px-1 flex justify-between items-center">
+            <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">
+              {filteredWorkouts.length} resultados encontrados
+            </span>
           </div>
         </div>
 
         <div className="space-y-3">
-          {workouts.length > 0 ? workouts.map(workout => {
+          {filteredWorkouts.length > 0 ? filteredWorkouts.map(workout => {
             const styles = getTypeStyles(workout.type);
             const Icon = styles.icon;
             return (
@@ -162,18 +247,16 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
             );
           }) : (
             <div className="p-12 text-center text-slate-500 glass rounded-3xl border-dashed border-2 border-slate-800">
-              <Activity className="mx-auto opacity-50 mb-4" size={30} />
-              <p className="font-bold text-slate-300">Nenhum treino</p>
+              <Activity className="mx-auto opacity-20 mb-4" size={30} />
+              <p className="font-bold text-slate-400">Nenhum treino encontrado para os filtros selecionados</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Detalhes do Treino Selecionado */}
       <div className={`sticky top-24 ${selectedWorkout ? 'block' : 'hidden lg:block'}`}>
         {selectedWorkout ? (
           <div className="glass rounded-3xl overflow-hidden flex flex-col max-h-[85vh] lg:max-h-[85vh] shadow-2xl">
-            {/* Header do Detalhe com botão de voltar no Mobile */}
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 lg:p-8 border-b border-slate-800">
               <button 
                 onClick={() => setSelectedWorkout(null)}
@@ -185,14 +268,9 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
               <div className="flex justify-between items-start mb-6 lg:mb-10">
                 <div className="space-y-1">
                   <p className="text-slate-400 text-[10px] lg:text-sm font-mono tracking-widest uppercase">
-                    {new Date(selectedWorkout.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}
+                    {new Date(selectedWorkout.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
                   </p>
                   <h3 className="text-2xl lg:text-4xl font-black text-white tracking-tighter uppercase">{selectedWorkout.type}</h3>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <span className={`px-3 lg:px-4 py-1.5 rounded-full text-[8px] lg:text-[10px] font-black uppercase tracking-widest ${getTypeStyles(selectedWorkout.type).bg} ${getTypeStyles(selectedWorkout.type).color}`}>
-                     Garmin Cloud
-                  </span>
                 </div>
               </div>
               
@@ -217,7 +295,6 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
             </div>
 
             <div className="p-6 lg:p-8 space-y-8 bg-slate-900/20 overflow-y-auto custom-scrollbar">
-              {/* Dinâmicas */}
               {selectedWorkout.biomechanics && (
                 <div>
                   <h5 className="font-black text-[10px] text-slate-500 uppercase mb-4 flex items-center gap-2 tracking-widest">
@@ -236,45 +313,11 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
                 </div>
               )}
 
-              {/* Laps Mobile Friendly */}
-              {selectedWorkout.laps && selectedWorkout.laps.length > 0 && (
-                <div className="animate-in fade-in slide-in-from-bottom-2">
-                  <h5 className="font-black text-[10px] text-slate-500 uppercase mb-4 flex items-center gap-2 tracking-widest">
-                    <Flag size={14} className="text-emerald-500" /> Parciais
-                  </h5>
-                  <div className="glass rounded-2xl overflow-hidden border border-white/5">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left">
-                        <thead className="text-[8px] text-slate-500 uppercase bg-slate-950/40 font-black tracking-widest border-b border-white/5">
-                          <tr>
-                            <th className="px-3 py-2 text-center w-8">#</th>
-                            <th className="px-3 py-2">Tempo</th>
-                            <th className="px-3 py-2 text-right">Km</th>
-                            <th className="px-3 py-2 text-right">Pace</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                          {selectedWorkout.laps.map((lap) => (
-                            <tr key={lap.lapNumber} className="hover:bg-slate-800/30">
-                              <td className="px-3 py-2 text-center font-mono text-slate-500">{lap.lapNumber}</td>
-                              <td className="px-3 py-2 font-mono text-slate-300">{lap.duration}</td>
-                              <td className="px-3 py-2 text-right text-slate-400">{lap.distance.toFixed(2)}</td>
-                              <td className="px-3 py-2 text-right text-emerald-500 font-bold font-mono">{lap.avgPace}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* IA e Chat */}
               <div className="pt-6 border-t border-white/10 space-y-6">
                 {isLoadingInsights ? (
                   <div className="flex flex-col items-center justify-center py-6 text-slate-400 gap-3">
                     <Loader2 className="animate-spin text-emerald-500" size={28} />
-                    <p className="text-[10px] font-bold tracking-widest uppercase">Consultando Coach...</p>
+                    <p className="text-[10px] font-bold tracking-widest uppercase">Coach analisando biomecânica...</p>
                   </div>
                 ) : (insights || selectedWorkout.aiAnalysis) ? (
                   <div className="space-y-6">
@@ -309,7 +352,7 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
                             type="text" 
                             value={userInput}
                             onChange={(e) => setUserInput(e.target.value)}
-                            placeholder="Dúvida?"
+                            placeholder="Dúvida sobre o treino?"
                             className="flex-1 bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
                           />
                           <button 
