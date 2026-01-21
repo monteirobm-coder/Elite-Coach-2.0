@@ -75,7 +75,6 @@ const App: React.FC = () => {
     
     const supabase = getSupabase();
     if (!supabase) {
-      console.warn("Supabase não configurado. Usando modo de demonstração.");
       setDbConnected(false);
       setIsLoading(false);
       setIsRefreshing(false);
@@ -84,36 +83,22 @@ const App: React.FC = () => {
 
     try {
       setDbConnected(true);
-      
-      // Carregar Perfil, Treinos e Metas em paralelo para performance
       const [profileData, workoutsData, goalsData] = await Promise.all([
         fetchLatestProfile(),
         fetchWorkouts(),
         fetchGoals()
       ]);
 
-      let currentProfile = profile;
-      if (profileData) {
-        setProfile(profileData);
-        currentProfile = profileData;
-      }
-
-      if (goalsData && goalsData.length > 0) {
-        setGoals(goalsData);
-      } else {
-        // Fallback para localStorage apenas se o DB estiver vazio
-        const savedGoals = localStorage.getItem('elite_run_goals');
-        if (savedGoals) setGoals(JSON.parse(savedGoals));
-      }
+      if (profileData) setProfile(profileData);
+      if (goalsData) setGoals(goalsData);
 
       const classifiedWorkouts = workoutsData.map(w => ({
         ...w,
-        type: classifyWorkout(w, currentProfile)
+        type: classifyWorkout(w, profileData || profile)
       }));
-      
       setWorkouts(classifiedWorkouts);
-    } catch (err: any) {
-      console.error("Erro ao carregar dados do Supabase:", err);
+    } catch (err) {
+      console.error("Load Data Error:", err);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -127,51 +112,33 @@ const App: React.FC = () => {
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
     setProfile(updatedProfile);
     if (!dbConnected) return;
-    
-    const success = await saveProfile(updatedProfile);
-    if (!success) {
-      console.error("Erro ao salvar perfil");
-    } else {
-      const reclassified = workouts.map(w => ({
-        ...w,
-        type: classifyWorkout(w, updatedProfile)
-      }));
-      setWorkouts(reclassified);
-    }
+    await saveProfile(updatedProfile);
   };
 
   const handleAddGoal = async (newGoal: TrainingGoal) => {
-    // Atualização Otimista da UI
-    const updatedGoals = [newGoal, ...goals];
-    setGoals(updatedGoals);
-    localStorage.setItem('elite_run_goals', JSON.stringify(updatedGoals));
+    // UI Otimista
+    setGoals([newGoal, ...goals]);
     
-    // Sincronização com o Banco
     if (dbConnected) {
       const success = await upsertGoal(newGoal);
       if (success) {
-        // Recarrega para obter o ID gerado pelo banco se necessário
-        const freshGoals = await fetchGoals();
-        setGoals(freshGoals);
+        const fresh = await fetchGoals();
+        setGoals(fresh);
       }
     }
   };
 
   const handleUpdateGoal = async (updatedGoal: TrainingGoal) => {
-    const updatedGoals = goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
-    setGoals(updatedGoals);
-    localStorage.setItem('elite_run_goals', JSON.stringify(updatedGoals));
-    
+    setGoals(goals.map(g => g.id === updatedGoal.id ? updatedGoal : g));
     if (dbConnected) {
       await upsertGoal(updatedGoal);
+      const fresh = await fetchGoals();
+      setGoals(fresh);
     }
   };
 
   const handleDeleteGoal = async (id: string) => {
-    const updatedGoals = goals.filter(g => g.id !== id);
-    setGoals(updatedGoals);
-    localStorage.setItem('elite_run_goals', JSON.stringify(updatedGoals));
-    
+    setGoals(goals.filter(g => g.id !== id));
     if (dbConnected) {
       await deleteGoalDb(id);
     }
@@ -185,31 +152,10 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     if (showProfile) return <Profile profile={profile} onUpdate={handleUpdateProfile} onClose={() => setShowProfile(false)} />;
-
-    if (isLoading) {
-      return (
-        <div className="flex flex-col items-center justify-center h-[60vh] text-slate-500 gap-4">
-          <Loader2 size={40} className="animate-spin text-emerald-500" />
-          <p className="animate-pulse font-medium tracking-wide">Iniciando Elite Run Coach...</p>
-        </div>
-      );
-    }
+    if (isLoading) return <div className="flex flex-col items-center justify-center h-[60vh] gap-4"><Loader2 size={40} className="animate-spin text-emerald-500" /><p className="animate-pulse">Sincronizando dados...</p></div>;
 
     return (
       <div className="space-y-6">
-        {!dbConnected && (
-          <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Database className="text-amber-500" size={20} />
-              <div className="hidden sm:block">
-                <p className="text-amber-500 font-bold text-sm uppercase tracking-tighter">Modo Offline / Demonstração</p>
-                <p className="text-slate-500 text-xs">As chaves do Supabase não foram detectadas.</p>
-              </div>
-            </div>
-            <a href="https://vercel.com" target="_blank" className="text-[10px] font-black uppercase bg-amber-500 text-slate-950 px-3 py-1 rounded-lg">Como conectar?</a>
-          </div>
-        )}
-
         {activeTab === 'dashboard' && <Dashboard workouts={workouts} goals={goals} profile={profile} />}
         {activeTab === 'treinos' && <Treinos workouts={workouts} profile={profile} />}
         {activeTab === 'metas' && <Metas goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} />}
@@ -226,13 +172,10 @@ const App: React.FC = () => {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3 text-emerald-500">
               <Zap size={32} fill="currentColor" />
-              <h1 className="font-bold text-xl tracking-tight uppercase leading-none">Elite Run<br/><span className="text-[10px] opacity-50 tracking-[0.3em]">Coach AI</span></h1>
+              <h1 className="font-bold text-xl uppercase leading-none">Elite Run<br/><span className="text-[10px] opacity-50 tracking-[0.3em]">Coach AI</span></h1>
             </div>
-            <button onClick={() => setIsMenuOpen(false)} className="lg:hidden p-2 text-slate-400 hover:text-white">
-              <X size={24} />
-            </button>
+            <button onClick={() => setIsMenuOpen(false)} className="lg:hidden p-2 text-slate-400"><X size={24} /></button>
           </div>
-          
           <nav className="space-y-1">
             <button onClick={() => handleTabChange('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><BarChart3 size={20} /> <span className="font-medium">Dashboard</span></button>
             <button onClick={() => handleTabChange('treinos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'treinos' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Activity size={20} /> <span className="font-medium">Treinos</span></button>
@@ -241,48 +184,23 @@ const App: React.FC = () => {
             <button onClick={() => handleTabChange('plano')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'plano' && !showProfile ? 'bg-emerald-500/10 text-emerald-500' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}><Map size={20} /> <span className="font-medium">Plano IA</span></button>
           </nav>
         </div>
-
         <div className="mt-auto p-6">
-          <button 
-            onClick={() => { loadData(true); setIsMenuOpen(false); }} 
-            disabled={isRefreshing || !dbConnected}
-            className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition-all border border-slate-700 disabled:opacity-20"
-          >
+          <button onClick={() => loadData(true)} disabled={isRefreshing} className="flex items-center justify-center gap-2 w-full py-3 bg-slate-800 rounded-xl font-semibold border border-slate-700">
             <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
-            <span className="truncate">{isRefreshing ? 'Sincronizando...' : 'Sincronizar Cloud'}</span>
+            <span>{isRefreshing ? 'Sincronizando...' : 'Sincronizar'}</span>
           </button>
         </div>
       </aside>
-
-      {isMenuOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
-          onClick={() => setIsMenuOpen(false)}
-        />
-      )}
-
       <main className="flex-1 overflow-y-auto relative flex flex-col">
-        <header className="sticky top-0 z-30 p-4 lg:p-6 flex justify-between items-center bg-slate-950/80 backdrop-blur-md border-b border-slate-900 lg:bg-transparent lg:border-none">
+        <header className="p-4 lg:p-6 flex justify-between items-center bg-slate-950/80 backdrop-blur-md sticky top-0 z-30">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsMenuOpen(true)}
-              className="lg:hidden p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300"
-            >
-              <Menu size={24} />
-            </button>
-            <h2 className="text-xl lg:text-2xl font-bold capitalize truncate">
-              {showProfile ? 'Perfil' : activeTab}
-            </h2>
+            <button onClick={() => setIsMenuOpen(true)} className="lg:hidden p-2 bg-slate-900 border border-slate-800 rounded-xl"><Menu size={24} /></button>
+            <h2 className="text-xl lg:text-2xl font-bold capitalize">{showProfile ? 'Perfil' : activeTab}</h2>
           </div>
-          
-          <button 
-            onClick={() => { setShowProfile(!showProfile); setIsMenuOpen(false); }} 
-            className={`w-10 h-10 lg:w-12 lg:h-12 rounded-full border-2 transition-all flex items-center justify-center overflow-hidden bg-slate-800 ${showProfile ? 'border-emerald-500 scale-110' : 'border-slate-700 hover:border-slate-500'}`}
-          >
+          <button onClick={() => setShowProfile(!showProfile)} className={`w-10 h-10 lg:w-12 lg:h-12 rounded-full border-2 transition-all flex items-center justify-center overflow-hidden bg-slate-800 ${showProfile ? 'border-emerald-500 scale-110' : 'border-slate-700'}`}>
             <img src={profile.photoUrl || `https://picsum.photos/seed/${profile.name}/100/100`} alt="Profile" className="w-full h-full object-cover" />
           </button>
         </header>
-
         <div className="px-4 lg:px-6 pb-12 flex-1">{renderContent()}</div>
       </main>
     </div>

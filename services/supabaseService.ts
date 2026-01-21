@@ -2,22 +2,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Workout, Lap, UserProfile, TrainingGoal } from '../types';
 
-// Credenciais fornecidas pelo usuário como fallback para garantir a conexão
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://lmuphzeagwusflvwadge.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_fAlU4gn7vGt-PpDr-c88KA_Vp23vAiE";
 
 let supabaseInstance: SupabaseClient | null = null;
 
-/**
- * Obtém a instância do Supabase de forma segura.
- */
 export const getSupabase = (): SupabaseClient | null => {
   if (supabaseInstance) return supabaseInstance;
-  
-  if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL === 'undefined') {
-    console.warn("Supabase: Chaves de configuração inválidas.");
-    return null;
-  }
+  if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL === 'undefined') return null;
 
   try {
     supabaseInstance = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -28,24 +20,12 @@ export const getSupabase = (): SupabaseClient | null => {
   }
 };
 
-/**
- * Busca o perfil mais recente
- */
 export const fetchLatestProfile = async (): Promise<UserProfile | null> => {
   const supabase = getSupabase();
   if (!supabase) return null;
-  
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) return null;
-    if (!data) return null;
-
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (error || !data) return null;
     return {
       name: data.name || 'Atleta',
       birthDate: data.birth_date || '1990-01-01',
@@ -63,54 +43,43 @@ export const fetchLatestProfile = async (): Promise<UserProfile | null> => {
       experience: data.experience || 'Iniciante',
       photoUrl: data.photo_url
     };
-  } catch (error) {
-    return null;
-  }
+  } catch (error) { return null; }
 };
 
 export const saveProfile = async (profile: UserProfile): Promise<boolean> => {
   const supabase = getSupabase();
   if (!supabase) return false;
   try {
-    const { error } = await supabase
-      .from('profiles')
-      .insert([{
-        name: profile.name,
-        birth_date: profile.birthDate,
-        weight: profile.weight,
-        height: profile.height,
-        body_fat: profile.bodyFat,
-        resting_hr: profile.restingHR,
-        max_hr: profile.maxHR,
-        vo2_max: profile.vo2Max,
-        lactate_threshold_pace: profile.lactateThresholdPace,
-        lactate_threshold_hr: profile.lactateThresholdHR,
-        hr_zones: profile.hrZones,
-        prs: profile.prs,
-        experience: profile.experience,
-        photo_url: profile.photoUrl
-      }]);
+    const { error } = await supabase.from('profiles').insert([{
+      name: profile.name,
+      birth_date: profile.birthDate,
+      weight: profile.weight,
+      height: profile.height,
+      body_fat: profile.bodyFat,
+      resting_hr: profile.restingHR,
+      max_hr: profile.maxHR,
+      vo2_max: profile.vo2Max,
+      lactate_threshold_pace: profile.lactateThresholdPace,
+      lactate_threshold_hr: profile.lactateThresholdHR,
+      hr_zones: profile.hrZones,
+      prs: profile.prs,
+      experience: profile.experience,
+      photo_url: profile.photoUrl
+    }]);
     return !error;
-  } catch (error) {
-    return false;
-  }
+  } catch (error) { return false; }
 };
 
 /**
- * Funções para Metas (Training Goals)
+ * TRAINING GOALS CRUD
  */
 
 export const fetchGoals = async (): Promise<TrainingGoal[]> => {
   const supabase = getSupabase();
   if (!supabase) return [];
   try {
-    const { data, error } = await supabase
-      .from('training_goals')
-      .select('*')
-      .order('target_date', { ascending: true });
-
+    const { data, error } = await supabase.from('training_goals').select('*').order('target_date', { ascending: true });
     if (error) throw error;
-    
     return (data || []).map(row => ({
       id: row.id,
       title: row.title,
@@ -130,6 +99,9 @@ export const upsertGoal = async (goal: TrainingGoal): Promise<boolean> => {
   const supabase = getSupabase();
   if (!supabase) return false;
   try {
+    // Regex para validar se o ID é um UUID real do banco
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(goal.id);
+    
     const payload: any = {
       title: goal.title,
       target_date: goal.targetDate,
@@ -139,18 +111,19 @@ export const upsertGoal = async (goal: TrainingGoal): Promise<boolean> => {
       progress: goal.progress
     };
 
-    // Se o ID for um UUID válido (veio do DB), incluímos para o upsert
-    if (goal.id && goal.id.includes('-')) {
+    // Se for UUID, atualizamos. Se for ID temporário (ex: g-123), removemos para o banco gerar um novo.
+    if (isUUID) {
       payload.id = goal.id;
     }
 
-    const { error } = await supabase
-      .from('training_goals')
-      .upsert([payload]);
-    
-    return !error;
+    const { error } = await supabase.from('training_goals').upsert([payload], { onConflict: 'id' });
+    if (error) {
+      console.error("Supabase Upsert Error Detail:", error.message, error.details, error.hint);
+      return false;
+    }
+    return true;
   } catch (error) {
-    console.error("upsertGoal Error:", error);
+    console.error("upsertGoal Exception:", error);
     return false;
   }
 };
@@ -159,10 +132,10 @@ export const deleteGoalDb = async (id: string): Promise<boolean> => {
   const supabase = getSupabase();
   if (!supabase) return false;
   try {
-    const { error } = await supabase
-      .from('training_goals')
-      .delete()
-      .eq('id', id);
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (!isUUID) return true; // Se não for UUID, não está no banco ainda
+
+    const { error } = await supabase.from('training_goals').delete().eq('id', id);
     return !error;
   } catch (error) {
     console.error("deleteGoalDb Error:", error);
@@ -170,6 +143,9 @@ export const deleteGoalDb = async (id: string): Promise<boolean> => {
   }
 };
 
+/**
+ * UTILS
+ */
 const calculateAge = (birthDate: string): number => {
   if (!birthDate) return 0;
   const birth = new Date(birthDate);
@@ -205,90 +181,48 @@ const calculatePace = (durationStr: string, distanceKm: number): string => {
 export const fetchWorkouts = async (): Promise<Workout[]> => {
   const supabase = getSupabase();
   if (!supabase) return [];
-
   try {
-    const { data: runsData, error: runsError } = await supabase
-      .from('runs')
-      .select('*')
-      .order('date', { ascending: false });
-
+    const { data: runsData, error: runsError } = await supabase.from('runs').select('*').order('date', { ascending: false });
     if (runsError || !runsData) return [];
-
     const runIds = runsData.map((r: any) => r.id);
     if (runIds.length === 0) return [];
-
-    const { data: lapsData } = await supabase
-      .from('run_laps')
-      .select('*')
-      .in('run_id', runIds);
-
+    const { data: lapsData } = await supabase.from('run_laps').select('*').in('run_id', runIds);
     return runsData.map((row: any) => {
       const relatedLaps = lapsData ? lapsData.filter((l: any) => l.run_id === row.id) : [];
       const duration = formatInterval(row.duration);
       const distance = parseFloat(row.distance_km) || 0;
-      
-      const mappedLaps: Lap[] = relatedLaps.map((lap: any) => {
-        const lapDuration = formatInterval(lap.duration);
-        const lapDistance = parseFloat(lap.distance_km) || 0;
-        let calculatedPace = calculatePace(lapDuration, lapDistance);
-        if (calculatedPace === '--:--' && lap.avg_pace && lap.avg_pace !== '00:00') {
-           calculatedPace = lap.avg_pace;
-        }
-
-        return {
-          lapNumber: lap.lap_number || lap.interval_index,
-          duration: lapDuration,
-          distance: lapDistance,
-          avgPace: calculatedPace,
-          avgHR: lap.avg_heart_rate,
-          cadence: parseFloat(lap.avg_cadence),
-          strideLength: parseFloat(lap.avg_stride_length),
-          verticalOscillation: lap.avg_vertical_oscillation ? parseFloat((parseFloat(lap.avg_vertical_oscillation) / 10).toFixed(1)) : 0,
-          verticalRatio: parseFloat(lap.avg_vertical_ratio),
-          groundContactTime: lap.avg_ground_contact_time?.toString()
-        };
-      }).sort((a, b) => a.lapNumber - b.lapNumber);
-
-      const getAverageFromLaps = (laps: any[], key: string): number => {
-        if (!laps || laps.length === 0) return 0;
-        const validLaps = laps.filter(l => l[key] !== null && l[key] !== undefined && parseFloat(l[key]) > 0);
-        if (validLaps.length === 0) return 0;
-        return validLaps.reduce((sum, lap) => sum + parseFloat(lap[key]), 0) / validLaps.length;
-      };
-
-      const dateOnly = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/Manaus',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(new Date(row.date));
-
-      const rawOscillation = parseFloat(row.avg_vertical_oscillation) || getAverageFromLaps(relatedLaps, 'avg_vertical_oscillation');
-      const correctedOscillation = rawOscillation > 0 ? parseFloat((rawOscillation / 10).toFixed(1)) : 0;
-
+      const mappedLaps: Lap[] = relatedLaps.map((lap: any) => ({
+        lapNumber: lap.lap_number || lap.interval_index,
+        duration: formatInterval(lap.duration),
+        distance: parseFloat(lap.distance_km) || 0,
+        avgPace: lap.avg_pace || calculatePace(formatInterval(lap.duration), parseFloat(lap.distance_km)),
+        avgHR: lap.avg_heart_rate,
+        cadence: parseFloat(lap.avg_cadence),
+        strideLength: parseFloat(lap.avg_stride_length),
+        verticalOscillation: lap.avg_vertical_oscillation ? parseFloat((parseFloat(lap.avg_vertical_oscillation) / 10).toFixed(1)) : 0,
+        verticalRatio: parseFloat(lap.avg_vertical_ratio),
+        groundContactTime: lap.avg_ground_contact_time?.toString()
+      })).sort((a, b) => a.lapNumber - b.lapNumber);
       return {
         id: row.id,
-        date: dateOnly, 
+        date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Manaus', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(row.date)),
         title: row.filename ? row.filename.replace('.md', '').replace(/_/g, ' ') : 'Treino Importado',
-        type: 'Rodagem', 
+        type: 'Rodagem',
         distance: distance,
         duration: duration,
         avgPace: calculatePace(duration, distance),
-        avgHR: row.avg_heart_rate || Math.round(getAverageFromLaps(relatedLaps, 'avg_heart_rate')),
+        avgHR: row.avg_heart_rate || 0,
         maxHR: row.max_heart_rate,
         trainingLoad: row.training_load || 0,
         biomechanics: {
-          cadence: parseFloat(row.avg_cadence) || Math.round(getAverageFromLaps(relatedLaps, 'avg_cadence')),
-          verticalOscillation: correctedOscillation,
-          groundContactTime: Math.round(parseFloat(row.ground_contact_time) || getAverageFromLaps(relatedLaps, 'avg_ground_contact_time')),
-          strideLength: parseFloat(row.avg_stride_length) || parseFloat(getAverageFromLaps(relatedLaps, 'avg_stride_length').toFixed(2)),
+          cadence: parseFloat(row.avg_cadence) || 0,
+          verticalOscillation: row.avg_vertical_oscillation ? parseFloat((parseFloat(row.avg_vertical_oscillation) / 10).toFixed(1)) : 0,
+          groundContactTime: Math.round(parseFloat(row.ground_contact_time) || 0),
+          strideLength: parseFloat(row.avg_stride_length) || 0,
         },
         laps: mappedLaps,
         aiAnalysis: row.ai_analysis
       };
     });
-  } catch (error) {
-    console.error("fetchWorkouts Error:", error);
-    return [];
-  }
+  } catch (error) { return []; }
 };
