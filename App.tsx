@@ -19,7 +19,15 @@ import Metas from './pages/Metas';
 import CalendarioProvas from './pages/CalendarioProvas';
 import PlanoTreino from './pages/PlanoTreino';
 import Profile from './pages/Profile';
-import { fetchWorkouts, fetchLatestProfile, saveProfile, getSupabase } from './services/supabaseService';
+import { 
+  fetchWorkouts, 
+  fetchLatestProfile, 
+  saveProfile, 
+  getSupabase, 
+  fetchGoals, 
+  upsertGoal, 
+  deleteGoalDb 
+} from './services/supabaseService';
 import { classifyWorkout } from './services/workoutUtils';
 
 const App: React.FC = () => {
@@ -59,6 +67,7 @@ const App: React.FC = () => {
   });
 
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [goals, setGoals] = useState<TrainingGoal[]>([]);
 
   const loadData = async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -75,14 +84,28 @@ const App: React.FC = () => {
 
     try {
       setDbConnected(true);
-      const profileData = await fetchLatestProfile();
+      
+      // Carregar Perfil, Treinos e Metas em paralelo para performance
+      const [profileData, workoutsData, goalsData] = await Promise.all([
+        fetchLatestProfile(),
+        fetchWorkouts(),
+        fetchGoals()
+      ]);
+
       let currentProfile = profile;
       if (profileData) {
         setProfile(profileData);
         currentProfile = profileData;
       }
 
-      const workoutsData = await fetchWorkouts();
+      if (goalsData && goalsData.length > 0) {
+        setGoals(goalsData);
+      } else {
+        // Fallback para localStorage apenas se o DB estiver vazio
+        const savedGoals = localStorage.getItem('elite_run_goals');
+        if (savedGoals) setGoals(JSON.parse(savedGoals));
+      }
+
       const classifiedWorkouts = workoutsData.map(w => ({
         ...w,
         type: classifyWorkout(w, currentProfile)
@@ -117,15 +140,47 @@ const App: React.FC = () => {
     }
   };
 
-  const [goals] = useState<TrainingGoal[]>([
-    { id: 'g1', title: 'Sub 40min nos 10km', targetDate: '2024-12-01', targetValue: '39:59', progress: 65 },
-    { id: 'g2', title: 'Maratona de SP', targetDate: '2025-04-15', targetValue: '03:15:00', progress: 20 }
-  ]);
+  const handleAddGoal = async (newGoal: TrainingGoal) => {
+    // Atualização Otimista da UI
+    const updatedGoals = [newGoal, ...goals];
+    setGoals(updatedGoals);
+    localStorage.setItem('elite_run_goals', JSON.stringify(updatedGoals));
+    
+    // Sincronização com o Banco
+    if (dbConnected) {
+      const success = await upsertGoal(newGoal);
+      if (success) {
+        // Recarrega para obter o ID gerado pelo banco se necessário
+        const freshGoals = await fetchGoals();
+        setGoals(freshGoals);
+      }
+    }
+  };
+
+  const handleUpdateGoal = async (updatedGoal: TrainingGoal) => {
+    const updatedGoals = goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
+    setGoals(updatedGoals);
+    localStorage.setItem('elite_run_goals', JSON.stringify(updatedGoals));
+    
+    if (dbConnected) {
+      await upsertGoal(updatedGoal);
+    }
+  };
+
+  const handleDeleteGoal = async (id: string) => {
+    const updatedGoals = goals.filter(g => g.id !== id);
+    setGoals(updatedGoals);
+    localStorage.setItem('elite_run_goals', JSON.stringify(updatedGoals));
+    
+    if (dbConnected) {
+      await deleteGoalDb(id);
+    }
+  };
 
   const handleTabChange = (tab: typeof activeTab) => {
     setActiveTab(tab);
     setShowProfile(false);
-    setIsMenuOpen(false); // Auto-hide menu on mobile after selection
+    setIsMenuOpen(false);
   };
 
   const renderContent = () => {
@@ -157,7 +212,7 @@ const App: React.FC = () => {
 
         {activeTab === 'dashboard' && <Dashboard workouts={workouts} goals={goals} profile={profile} />}
         {activeTab === 'treinos' && <Treinos workouts={workouts} profile={profile} />}
-        {activeTab === 'metas' && <Metas goals={goals} />}
+        {activeTab === 'metas' && <Metas goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} />}
         {activeTab === 'calendario' && <CalendarioProvas />}
         {activeTab === 'plano' && <PlanoTreino profile={profile} workouts={workouts} goals={goals} />}
       </div>
@@ -166,7 +221,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100">
-      {/* Sidebar / Drawer */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 glass border-r border-slate-800 flex flex-col transition-transform duration-300 lg:static lg:translate-x-0 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6">
           <div className="flex items-center justify-between mb-8">
@@ -200,7 +254,6 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Overlay for mobile menu */}
       {isMenuOpen && (
         <div 
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"

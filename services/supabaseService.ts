@@ -1,5 +1,6 @@
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Workout, Lap, UserProfile } from '../types';
+import { Workout, Lap, UserProfile, TrainingGoal } from '../types';
 
 // Credenciais fornecidas pelo usuário como fallback para garantir a conexão
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://lmuphzeagwusflvwadge.supabase.co";
@@ -13,7 +14,6 @@ let supabaseInstance: SupabaseClient | null = null;
 export const getSupabase = (): SupabaseClient | null => {
   if (supabaseInstance) return supabaseInstance;
   
-  // Verifica se as chaves são válidas
   if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL === 'undefined') {
     console.warn("Supabase: Chaves de configuração inválidas.");
     return null;
@@ -29,7 +29,7 @@ export const getSupabase = (): SupabaseClient | null => {
 };
 
 /**
- * Busca o perfil mais recente cadastrado na tabela 'profiles'
+ * Busca o perfil mais recente
  */
 export const fetchLatestProfile = async (): Promise<UserProfile | null> => {
   const supabase = getSupabase();
@@ -43,11 +43,7 @@ export const fetchLatestProfile = async (): Promise<UserProfile | null> => {
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      console.error("Erro Supabase ao buscar perfil:", error.message);
-      return null;
-    }
-
+    if (error) return null;
     if (!data) return null;
 
     return {
@@ -67,19 +63,14 @@ export const fetchLatestProfile = async (): Promise<UserProfile | null> => {
       experience: data.experience || 'Iniciante',
       photoUrl: data.photo_url
     };
-  } catch (error: any) {
-    console.error("Erro inesperado no fetchLatestProfile:", error);
+  } catch (error) {
     return null;
   }
 };
 
-/**
- * Salva novo perfil
- */
 export const saveProfile = async (profile: UserProfile): Promise<boolean> => {
   const supabase = getSupabase();
   if (!supabase) return false;
-  
   try {
     const { error } = await supabase
       .from('profiles')
@@ -101,12 +92,84 @@ export const saveProfile = async (profile: UserProfile): Promise<boolean> => {
       }]);
     return !error;
   } catch (error) {
-    console.error("Erro ao salvar perfil no Supabase:", error);
     return false;
   }
 };
 
-// Funções auxiliares de formatação
+/**
+ * Funções para Metas (Training Goals)
+ */
+
+export const fetchGoals = async (): Promise<TrainingGoal[]> => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('training_goals')
+      .select('*')
+      .order('target_date', { ascending: true });
+
+    if (error) throw error;
+    
+    return (data || []).map(row => ({
+      id: row.id,
+      title: row.title,
+      targetDate: row.target_date,
+      targetValue: row.target_value,
+      targetDistance: parseFloat(row.target_distance),
+      targetPace: row.target_pace,
+      progress: row.progress || 0
+    }));
+  } catch (error) {
+    console.error("fetchGoals Error:", error);
+    return [];
+  }
+};
+
+export const upsertGoal = async (goal: TrainingGoal): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  try {
+    const payload: any = {
+      title: goal.title,
+      target_date: goal.targetDate,
+      target_value: goal.targetValue,
+      target_distance: goal.targetDistance,
+      target_pace: goal.targetPace,
+      progress: goal.progress
+    };
+
+    // Se o ID for um UUID válido (veio do DB), incluímos para o upsert
+    if (goal.id && goal.id.includes('-')) {
+      payload.id = goal.id;
+    }
+
+    const { error } = await supabase
+      .from('training_goals')
+      .upsert([payload]);
+    
+    return !error;
+  } catch (error) {
+    console.error("upsertGoal Error:", error);
+    return false;
+  }
+};
+
+export const deleteGoalDb = async (id: string): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('training_goals')
+      .delete()
+      .eq('id', id);
+    return !error;
+  } catch (error) {
+    console.error("deleteGoalDb Error:", error);
+    return false;
+  }
+};
+
 const calculateAge = (birthDate: string): number => {
   if (!birthDate) return 0;
   const birth = new Date(birthDate);
@@ -139,35 +202,26 @@ const calculatePace = (durationStr: string, distanceKm: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-/**
- * Busca os treinos das tabelas 'runs' e 'run_laps'.
- */
 export const fetchWorkouts = async (): Promise<Workout[]> => {
   const supabase = getSupabase();
   if (!supabase) return [];
 
   try {
-    // 1. Busca os dados gerais da corrida (Cabeçalho)
     const { data: runsData, error: runsError } = await supabase
       .from('runs')
       .select('*')
       .order('date', { ascending: false });
 
-    if (runsError || !runsData) {
-      console.warn("Nenhum treino encontrado na tabela 'runs'.");
-      return [];
-    }
+    if (runsError || !runsData) return [];
 
     const runIds = runsData.map((r: any) => r.id);
     if (runIds.length === 0) return [];
 
-    // 2. Busca as voltas (Laps) relacionadas
     const { data: lapsData } = await supabase
       .from('run_laps')
       .select('*')
       .in('run_id', runIds);
 
-    // 3. Monta o objeto Workout
     return runsData.map((row: any) => {
       const relatedLaps = lapsData ? lapsData.filter((l: any) => l.run_id === row.id) : [];
       const duration = formatInterval(row.duration);
@@ -176,12 +230,8 @@ export const fetchWorkouts = async (): Promise<Workout[]> => {
       const mappedLaps: Lap[] = relatedLaps.map((lap: any) => {
         const lapDuration = formatInterval(lap.duration);
         const lapDistance = parseFloat(lap.distance_km) || 0;
-        
-        // Calcula o pace usando tempo e distância para garantir precisão
         let calculatedPace = calculatePace(lapDuration, lapDistance);
-        
-        // Se o cálculo falhar (distância 0), tenta usar o valor do banco se existir
-        if (calculatedPace === '--:--' && lap.avg_pace && lap.avg_pace !== '00:00' && lap.avg_pace !== '0:00') {
+        if (calculatedPace === '--:--' && lap.avg_pace && lap.avg_pace !== '00:00') {
            calculatedPace = lap.avg_pace;
         }
 
@@ -191,55 +241,54 @@ export const fetchWorkouts = async (): Promise<Workout[]> => {
           distance: lapDistance,
           avgPace: calculatedPace,
           avgHR: lap.avg_heart_rate,
-          avgPower: parseFloat(lap.avg_power),
+          cadence: parseFloat(lap.avg_cadence),
           strideLength: parseFloat(lap.avg_stride_length),
-          verticalOscillation: parseFloat(lap.avg_vertical_oscillation),
+          verticalOscillation: lap.avg_vertical_oscillation ? parseFloat((parseFloat(lap.avg_vertical_oscillation) / 10).toFixed(1)) : 0,
+          verticalRatio: parseFloat(lap.avg_vertical_ratio),
+          groundContactTime: lap.avg_ground_contact_time?.toString()
         };
       }).sort((a, b) => a.lapNumber - b.lapNumber);
 
-      // Função auxiliar para calcular média das voltas caso o dado principal esteja faltando
       const getAverageFromLaps = (laps: any[], key: string): number => {
         if (!laps || laps.length === 0) return 0;
         const validLaps = laps.filter(l => l[key] !== null && l[key] !== undefined && parseFloat(l[key]) > 0);
         if (validLaps.length === 0) return 0;
-        const total = validLaps.reduce((sum, lap) => sum + parseFloat(lap[key]), 0);
-        return total / validLaps.length;
+        return validLaps.reduce((sum, lap) => sum + parseFloat(lap[key]), 0) / validLaps.length;
       };
 
-      // Recupera dados com fallback para laps se estiver zerado no header
-      const avgCadence = parseFloat(row.avg_cadence) || Math.round(getAverageFromLaps(relatedLaps, 'avg_cadence'));
-      const avgVertOsc = parseFloat(row.avg_vertical_oscillation) || getAverageFromLaps(relatedLaps, 'avg_vertical_oscillation');
-      const avgStride = parseFloat(row.avg_stride_length) || getAverageFromLaps(relatedLaps, 'avg_stride_length');
-      
-      // Tenta recuperar FC Média das voltas se não tiver no header
-      const avgHR = row.avg_heart_rate || Math.round(getAverageFromLaps(relatedLaps, 'avg_heart_rate'));
-      
-      // Tenta recuperar GCT das voltas
-      const avgGCT = parseFloat(row.avg_ground_contact_time) || Math.round(getAverageFromLaps(relatedLaps, 'avg_ground_contact_time'));
+      const dateOnly = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Manaus',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date(row.date));
+
+      const rawOscillation = parseFloat(row.avg_vertical_oscillation) || getAverageFromLaps(relatedLaps, 'avg_vertical_oscillation');
+      const correctedOscillation = rawOscillation > 0 ? parseFloat((rawOscillation / 10).toFixed(1)) : 0;
 
       return {
         id: row.id,
-        date: new Date(row.date).toISOString().split('T')[0],
+        date: dateOnly, 
         title: row.filename ? row.filename.replace('.md', '').replace(/_/g, ' ') : 'Treino Importado',
         type: 'Rodagem', 
         distance: distance,
         duration: duration,
         avgPace: calculatePace(duration, distance),
-        avgHR: avgHR || 0,
+        avgHR: row.avg_heart_rate || Math.round(getAverageFromLaps(relatedLaps, 'avg_heart_rate')),
         maxHR: row.max_heart_rate,
         trainingLoad: row.training_load || 0,
         biomechanics: {
-          cadence: avgCadence,
-          verticalOscillation: parseFloat(avgVertOsc.toFixed(2)),
-          groundContactTime: Math.round(avgGCT),
-          strideLength: parseFloat(avgStride.toFixed(2)),
+          cadence: parseFloat(row.avg_cadence) || Math.round(getAverageFromLaps(relatedLaps, 'avg_cadence')),
+          verticalOscillation: correctedOscillation,
+          groundContactTime: Math.round(parseFloat(row.ground_contact_time) || getAverageFromLaps(relatedLaps, 'avg_ground_contact_time')),
+          strideLength: parseFloat(row.avg_stride_length) || parseFloat(getAverageFromLaps(relatedLaps, 'avg_stride_length').toFixed(2)),
         },
         laps: mappedLaps,
         aiAnalysis: row.ai_analysis
       };
     });
   } catch (error) {
-    console.error("Erro fetchWorkouts:", error);
+    console.error("fetchWorkouts Error:", error);
     return [];
   }
 };

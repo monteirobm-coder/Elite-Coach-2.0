@@ -94,5 +94,7 @@ export interface TrainingGoal {
   title: string;
   targetDate: string;
   targetValue: string;
+  targetDistance?: number;
+  targetPace?: string;
   progress: number;
 }
