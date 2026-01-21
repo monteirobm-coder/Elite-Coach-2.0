@@ -2,28 +2,56 @@ import { GoogleGenAI } from "@google/genai";
 import { Workout, UserProfile, TrainingGoal } from "../types";
 
 /**
- * Realiza análise profunda de biomecânica e fisiologia.
+ * Realiza análise profunda de biomecânica e fisiologia cruzando dados técnicos com percepção do usuário.
  */
-export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, previous: Workout[]): Promise<string> => {
-  // Criar instância dentro da função para garantir o uso da chave mais atual
+export const getCoachAnalysis = async (
+  workout: Workout, 
+  profile: UserProfile, 
+  previous: Workout[],
+  userPerception: string
+): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const cadence = workout.biomechanics?.cadence || "N/A";
     const oscillation = workout.biomechanics?.verticalOscillation || "N/A";
     const gct = workout.biomechanics?.groundContactTime || "N/A";
+    const stride = workout.biomechanics?.strideLength || "N/A";
 
-    // Fix: Using gemini-3-pro-preview for complex biomechanical and physiological analysis as per guidelines
-    // Also incorporating recent history for longitudinal perspective.
+    const prs = `5k: ${profile.prs.k5}, 10k: ${profile.prs.k10}, 21k: ${profile.prs.k21}, 42k: ${profile.prs.k42}`;
+    const biometrics = `Peso: ${profile.weight}kg, Gordura: ${profile.bodyFat}%, VO2: ${profile.vo2Max}`;
+
+    const prompt = `
+      Atue como Head Coach de Corrida. Analise o treino cruzando DADOS TÉCNICOS + PERCEPÇÃO DO ATLETA.
+
+      PERCEPÇÃO DO ATLETA: "${userPerception}"
+
+      DADOS DO TREINO:
+      - Tipo: ${workout.type} (${workout.title})
+      - Distância: ${workout.distance}km | Tempo: ${workout.duration} | Pace Médio: ${workout.avgPace}
+      - FC Média: ${workout.avgHR}bpm | FC Máx: ${workout.maxHR || 'N/A'}
+      - Dinâmicas: Cadência ${cadence}ppm, Oscilação ${oscillation}cm, Contato Solo ${gct}ms, Passada ${stride}m.
+
+      PERFIL DO ATLETA (${profile.experience}):
+      - ${biometrics}
+      - Limiares: Pace ${profile.lactateThresholdPace}, FC ${profile.lactateThresholdHR}bpm
+      - Recordes (PRs): ${prs}
+
+      HISTÓRICO RECENTE:
+      ${previous.slice(0, 3).map(p => `- ${p.date}: ${p.type}, ${p.distance}km em ${p.avgPace}`).join('\n')}
+
+      INSTRUÇÕES:
+      1. Avalie se a percepção do atleta condiz com os dados fisiológicos (FC vs Pace).
+      2. Analise a biomecânica em relação ao cansaço relatado.
+      3. Verifique se o treino foi condizente com o nível de condicionamento (baseado nos PRs e VO2).
+      4. Dê um feedback técnico, motivador e direto (Markdown).
+    `;
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `Analise este treino para o atleta ${profile.name} (${profile.experience}):
-        DADOS DO TREINO: Distância ${workout.distance}km, Pace ${workout.avgPace}, FC ${workout.avgHR}bpm.
-        DINÂMICAS: Cadência ${cadence}ppm, Oscilação ${oscillation}cm, Contato ${gct}ms.
-        Contexto do Atleta: Limiar Lactato ${profile.lactateThresholdPace}.
-        Histórico Recente (últimos 3 treinos): ${previous.slice(0, 3).map(p => `${p.type}: ${p.distance}km em ${p.avgPace}`).join(' | ')}`,
+      contents: prompt,
       config: {
-        systemInstruction: "Você é um Head Coach de Corrida de elite. Forneça análises técnicas de performance e biomecânica. Não dê conselhos médicos, foque em treinamento esportivo e eficiência mecânica.",
+        systemInstruction: "Você é um Head Coach de elite especializado em fisiologia do exercício e biomecânica. Sua análise deve ser baseada em evidências, correlacionando percepção subjetiva com dados objetivos de sensores Garmin.",
         temperature: 0.7,
       },
     });
@@ -32,7 +60,7 @@ export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, p
   } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
     if (error.message?.includes('429')) return "Limite de uso atingido. Tente novamente em 1 minuto.";
-    return "O Coach está temporariamente indisponível para análise profunda. O chat técnico continua ativo.";
+    return "O Coach está temporariamente indisponível para análise profunda.";
   }
 };
 
@@ -43,11 +71,10 @@ export const askCoachAboutWorkout = async (message: string, workout: Workout, pr
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
-    // Fix: Ensure the chat system instruction includes the context of the specific workout and previous messages
     const chat = ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: `Você é o Coach de Corrida do ${profile.name}. Responda dúvidas técnicas sobre o treino de ${workout.date} (${workout.type}, ${workout.distance}km). Seja motivador mas extremamente técnico. Histórico de conversa: ${JSON.stringify(history.slice(-3))}`
+        systemInstruction: `Você é o Coach de Corrida do ${profile.name}. Responda dúvidas técnicas sobre o treino de ${workout.date}. Histórico recente: ${JSON.stringify(history.slice(-3))}`
       }
     });
 
@@ -66,17 +93,11 @@ export const generateTrainingPlan = async (profile: UserProfile, goals: Training
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
-    // Fix: Using gemini-3-pro-preview for training periodization (complex task)
-    // and ensuring athlete history and specific metrics are considered.
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `Gere um plano semanal para ${profile.name}. 
-        Metas: ${goals.map(g => g.title).join(', ')}. 
-        VO2 Max: ${profile.vo2Max}.
-        Limiar Lactato: ${profile.lactateThresholdPace} / ${profile.lactateThresholdHR}bpm.
-        Volume de Treinos Recentes: ${history.slice(0, 5).map(h => `${h.type} ${h.distance}km`).join(', ')}.`,
+      contents: `Gere um plano semanal para ${profile.name}. Metas: ${goals.map(g => g.title).join(', ')}. VO2: ${profile.vo2Max}. Histórico: ${history.slice(0, 5).map(h => h.type).join(', ')}`,
       config: {
-        systemInstruction: "Crie planos de treinamento baseados em ciência do esporte (periodização). Forneça o plano em formato estruturado."
+        systemInstruction: "Crie planos de treinamento baseados em ciência do esporte (periodização)."
       }
     });
     return response.text ?? "Erro ao gerar plano.";

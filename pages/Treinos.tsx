@@ -17,7 +17,8 @@ import {
   Flag,
   ArrowLeft,
   CalendarDays,
-  Filter
+  Filter,
+  MessageSquareText
 } from 'lucide-react';
 import { Workout, UserProfile } from '../types';
 import { getCoachAnalysis, askCoachAboutWorkout } from '../services/geminiService';
@@ -52,6 +53,7 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [insights, setInsights] = useState<string | null>(null);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [userPerception, setUserPerception] = useState('');
   
   // Estados de Filtro
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,6 +90,7 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
       setInsights(selectedWorkout.aiAnalysis || null);
       setChatMessages([]);
       setUserInput('');
+      setUserPerception('');
       if (window.innerWidth < 1024) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -99,14 +102,18 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
   }, [chatMessages]);
 
   const handleFetchInsights = async (workout: Workout) => {
+    if (!userPerception.trim()) {
+      alert("Por favor, descreva sua percepção de esforço antes de analisar.");
+      return;
+    }
+    
     setIsLoadingInsights(true);
     try {
-      // Otimização: Passar apenas os últimos 5 treinos como histórico para evitar estouro de tokens
       const recentHistory = initialWorkouts
         .filter(w => w.id !== workout.id)
         .slice(0, 5);
 
-      const result = await getCoachAnalysis(workout, profile, recentHistory);
+      const result = await getCoachAnalysis(workout, profile, recentHistory, userPerception);
       setInsights(result);
     } catch (err) {
       console.error("Erro ao buscar insights:", err);
@@ -191,20 +198,11 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
                 ))}
               </select>
             </div>
-            
-            {(filterMonth !== 'all' || filterYear !== 'all' || searchQuery !== '') && (
-              <button 
-                onClick={() => { setFilterMonth('all'); setFilterYear('all'); setSearchQuery(''); }}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-              >
-                Limpar
-              </button>
-            )}
           </div>
           
           <div className="px-1 flex justify-between items-center">
             <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">
-              {filteredWorkouts.length} resultados encontrados
+              {filteredWorkouts.length} treinos
             </span>
           </div>
         </div>
@@ -248,7 +246,7 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
           }) : (
             <div className="p-12 text-center text-slate-500 glass rounded-3xl border-dashed border-2 border-slate-800">
               <Activity className="mx-auto opacity-20 mb-4" size={30} />
-              <p className="font-bold text-slate-400">Nenhum treino encontrado para os filtros selecionados</p>
+              <p className="font-bold text-slate-400">Nenhum treino encontrado</p>
             </div>
           )}
         </div>
@@ -295,93 +293,121 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
             </div>
 
             <div className="p-6 lg:p-8 space-y-8 bg-slate-900/20 overflow-y-auto custom-scrollbar">
-              {selectedWorkout.biomechanics && (
-                <div>
-                  <h5 className="font-black text-[10px] text-slate-500 uppercase mb-4 flex items-center gap-2 tracking-widest">
-                    <Layers size={14} className="text-emerald-500" /> Dinâmicas
-                  </h5>
-                  <div className="grid grid-cols-2 gap-3 lg:gap-4">
-                    <div className="bg-slate-900/60 p-3 lg:p-4 rounded-2xl border border-white/5">
-                      <p className="text-[8px] text-slate-500 uppercase font-bold mb-1">Cadência</p>
-                      <p className="text-base lg:text-lg font-black">{selectedWorkout.biomechanics.cadence || '--'} <span className="text-[8px] font-normal opacity-50">ppm</span></p>
-                    </div>
-                    <div className="bg-slate-900/60 p-3 lg:p-4 rounded-2xl border border-white/5">
-                      <p className="text-[8px] text-slate-500 uppercase font-bold mb-1">Oscilação</p>
-                      <p className="text-base lg:text-lg font-black">{selectedWorkout.biomechanics.verticalOscillation || '--'} <span className="text-[8px] font-normal opacity-50">cm</span></p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-6 border-t border-white/10 space-y-6">
+              <div className="pt-2">
                 {isLoadingInsights ? (
-                  <div className="flex flex-col items-center justify-center py-6 text-slate-400 gap-3">
-                    <Loader2 className="animate-spin text-emerald-500" size={28} />
-                    <p className="text-[10px] font-bold tracking-widest uppercase">Coach analisando biomecânica...</p>
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-3 bg-slate-900/40 rounded-3xl border border-white/5">
+                    <Loader2 className="animate-spin text-emerald-500" size={32} />
+                    <p className="text-[10px] font-bold tracking-[0.3em] uppercase animate-pulse">Cruzando Dados Técnicos + Percepção...</p>
                   </div>
                 ) : (insights || selectedWorkout.aiAnalysis) ? (
                   <div className="space-y-6">
-                    <div className="bg-emerald-500/5 rounded-2xl p-4 lg:p-6 border border-emerald-500/20">
-                      <h5 className="text-emerald-500 font-black text-[10px] uppercase mb-3 flex items-center gap-2 tracking-widest">
-                        <Sparkles size={14} fill="currentColor" /> Coach Feedback
+                    <div className="bg-emerald-500/5 rounded-3xl p-5 lg:p-8 border border-emerald-500/20 shadow-inner">
+                      <h5 className="text-emerald-500 font-black text-[10px] uppercase mb-4 flex items-center gap-2 tracking-[0.2em]">
+                        <Sparkles size={16} fill="currentColor" /> Feedback do Coach AI
                       </h5>
-                      <div className="text-slate-300 text-xs lg:text-sm leading-relaxed whitespace-pre-wrap font-medium">
+                      <div className="text-slate-300 text-xs lg:text-sm leading-relaxed whitespace-pre-wrap font-medium prose prose-invert">
                         {insights || selectedWorkout.aiAnalysis}
                       </div>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-4">
+                       <h5 className="font-black text-[10px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]">
+                        <MessageSquareText size={14} className="text-emerald-500" /> Tira Dúvidas Técnico
+                      </h5>
                       <div className="glass bg-slate-950/40 rounded-2xl overflow-hidden flex flex-col border border-white/5">
-                        <div className="p-3 max-h-[250px] overflow-y-auto space-y-3 custom-scrollbar text-xs">
+                        <div className="p-4 max-h-[300px] overflow-y-auto space-y-4 custom-scrollbar text-xs">
+                          {chatMessages.length === 0 && (
+                            <p className="text-center text-slate-600 py-4 italic">Alguma dúvida sobre as zonas de FC ou biomecânica deste treino?</p>
+                          )}
                           {chatMessages.map((msg, idx) => (
                             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[90%] rounded-xl p-2.5 ${
+                              <div className={`max-w-[85%] rounded-2xl p-3 ${
                                 msg.role === 'user' 
-                                  ? 'bg-emerald-600 text-white' 
-                                  : 'bg-slate-800 text-slate-200 border border-white/5'
+                                  ? 'bg-emerald-600 text-white shadow-lg' 
+                                  : 'bg-slate-800 text-slate-200 border border-white/10'
                               }`}>
-                                <p>{msg.text}</p>
+                                <p className="leading-relaxed">{msg.text}</p>
                               </div>
                             </div>
                           ))}
                           <div ref={chatEndRef} />
                         </div>
 
-                        <form onSubmit={handleSendMessage} className="p-2 bg-slate-900 border-t border-white/5 flex gap-2">
+                        <form onSubmit={handleSendMessage} className="p-3 bg-slate-900/60 border-t border-white/5 flex gap-2">
                           <input 
                             type="text" 
                             value={userInput}
                             onChange={(e) => setUserInput(e.target.value)}
-                            placeholder="Dúvida sobre o treino?"
-                            className="flex-1 bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
+                            placeholder="Pergunte algo técnico..."
+                            className="flex-1 bg-slate-950/80 border border-white/10 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
                           />
                           <button 
                             type="submit"
                             disabled={isSending || !userInput.trim()}
-                            className="bg-emerald-500 text-white p-2 rounded-lg hover:bg-emerald-400 disabled:opacity-20"
+                            className="bg-emerald-500 text-white p-2.5 rounded-xl hover:bg-emerald-400 disabled:opacity-20 transition-all shadow-lg shadow-emerald-500/10"
                           >
-                            <Send size={16} />
+                            <Send size={18} />
                           </button>
                         </form>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <button 
-                    onClick={() => handleFetchInsights(selectedWorkout)}
-                    className="w-full flex items-center justify-center gap-2 bg-emerald-500 py-3 rounded-xl font-black text-white text-xs uppercase tracking-widest shadow-lg shadow-emerald-500/20"
-                  >
-                    <Sparkles size={16} />
-                    Analisar com IA
-                  </button>
+                  <div className="space-y-6">
+                    <div className="bg-slate-900/40 p-6 rounded-3xl border border-white/5 space-y-4">
+                      <div className="flex items-center gap-2">
+                        <MessageSquareText className="text-emerald-500" size={18} />
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                          Como foi a estrutura e sua percepção de esforço?
+                        </label>
+                      </div>
+                      <textarea
+                        value={userPerception}
+                        onChange={(e) => setUserPerception(e.target.value)}
+                        placeholder="Ex: Tentei manter o pace de limiar mas senti as pernas pesadas no km 8. Estrutura foi 2km aquec + 6km ritmo + 2km desc."
+                        className="w-full h-32 bg-slate-950 border border-white/10 rounded-2xl p-4 text-sm text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 transition-all resize-none placeholder:text-slate-700"
+                      />
+                      <p className="text-[10px] text-slate-600 leading-tight">
+                        * Sua explicação ajuda o Coach a cruzar dados do Garmin (FC, Cadência) com seu estado físico real para uma análise muito mais leve e precisa.
+                      </p>
+                    </div>
+
+                    <button 
+                      onClick={() => handleFetchInsights(selectedWorkout)}
+                      disabled={!userPerception.trim()}
+                      className="w-full flex items-center justify-center gap-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 py-4 rounded-2xl font-black text-white text-xs uppercase tracking-[0.2em] shadow-xl shadow-emerald-500/20 transition-all active:scale-[0.98]"
+                    >
+                      <Sparkles size={18} fill="currentColor" />
+                      Analisar com Coach AI
+                    </button>
+                  </div>
                 )}
               </div>
+
+              {selectedWorkout.biomechanics && (
+                <div className="pt-8 border-t border-white/5">
+                  <h5 className="font-black text-[10px] text-slate-500 uppercase mb-4 flex items-center gap-2 tracking-widest">
+                    <Layers size={14} className="text-emerald-500" /> Dinâmicas de Corrida
+                  </h5>
+                  <div className="grid grid-cols-2 gap-3 lg:gap-4">
+                    <div className="bg-slate-900/60 p-4 rounded-2xl border border-white/5">
+                      <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Cadência</p>
+                      <p className="text-base lg:text-lg font-black">{selectedWorkout.biomechanics.cadence || '--'} <span className="text-[8px] font-normal opacity-50 uppercase tracking-tighter">ppm</span></p>
+                    </div>
+                    <div className="bg-slate-900/60 p-4 rounded-2xl border border-white/5">
+                      <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Oscilação</p>
+                      <p className="text-base lg:text-lg font-black">{selectedWorkout.biomechanics.verticalOscillation || '--'} <span className="text-[8px] font-normal opacity-50 uppercase tracking-tighter">cm</span></p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (
-          <div className="glass rounded-3xl h-[400px] hidden lg:flex flex-col items-center justify-center text-center p-8 text-slate-500 border-dashed border-2 border-slate-800">
-            <Activity size={40} className="opacity-10 mb-4" />
-            <p className="text-sm font-bold uppercase tracking-widest">Selecione um treino</p>
+          <div className="glass rounded-3xl h-[500px] hidden lg:flex flex-col items-center justify-center text-center p-12 text-slate-500 border-dashed border-2 border-slate-800/50">
+            <Activity size={48} className="opacity-10 mb-6" />
+            <h4 className="text-lg font-black text-slate-700 uppercase tracking-[0.3em]">Treino não selecionado</h4>
+            <p className="max-w-[200px] text-xs mt-2 opacity-40">Selecione uma atividade na lista ao lado para iniciar a análise técnica do Coach.</p>
           </div>
         )}
       </div>
