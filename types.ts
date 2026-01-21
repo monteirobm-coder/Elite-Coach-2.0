@@ -98,3 +98,12 @@ export interface TrainingGoal {
   targetPace?: string;
   progress: number;
 }
+
+export interface Race {
+  id: string;
+  name: string;
+  date: string;
+  distance: string;
+  location: string;
+  status: 'Inscrito' | 'Planejado' | 'Interessado';
+}
