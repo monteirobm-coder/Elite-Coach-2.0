@@ -1,24 +1,22 @@
 import { GoogleGenAI } from "@google/genai";
 import { Workout, UserProfile, TrainingGoal } from "../types";
 
-// Inicialização recomendada usando a variável de ambiente process.env.API_KEY
+// Inicialização centralizada
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Realiza análise profunda de biomecânica e fisiologia usando Gemini.
- * Alterado para 'gemini-3-flash-preview' para maior estabilidade em produção.
  */
 export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, previous: Workout[]): Promise<string> => {
   try {
-    // Verificação básica de dados para evitar prompt vazio
     const cadence = workout.biomechanics?.cadence || "N/A";
     const oscillation = workout.biomechanics?.verticalOscillation || "N/A";
     const gct = workout.biomechanics?.groundContactTime || "N/A";
 
+    // Simplificado: Usando objeto direto em vez de array para contents
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: [{
-        role: 'user',
+      contents: {
         parts: [{
           text: `
             Atue como um Head Coach de Corrida de Elite. Analise o seguinte treino e forneça um feedback técnico conciso e acionável.
@@ -33,24 +31,22 @@ export const getCoachAnalysis = async (workout: Workout, profile: UserProfile, p
             - FC Média: ${workout.avgHR} bpm
             - Biomecânica: Cadência ${cadence}, Oscilação ${oscillation}cm, Contato Solo ${gct}ms.
 
-            HISTÓRICO RECENTE: Analise com base nos últimos ${previous.length} treinos fornecidos no contexto.
+            HISTÓRICO RECENTE: Baseado nos últimos ${previous.length} treinos.
 
             Forneça em formato Markdown:
-            1. **Análise da Intensidade** (estava na zona correta para o tipo ${workout.type}?)
-            2. **Insight Biomecânico** (foco em eficiência)
+            1. **Análise da Intensidade**
+            2. **Insight Biomecânico**
             3. **Recomendação Próximo Passo**.
           `
         }]
-      }]
+      }
     });
     
-    return response.text ?? "Não foi possível gerar a análise. Tente novamente.";
+    return response.text ?? "O Coach não conseguiu gerar uma resposta clara. Verifique os dados.";
   } catch (error: any) {
-    console.error("Erro detalhado no Gemini Analysis:", error);
-    if (error.message?.includes("model")) {
-      return "Erro: Modelo de IA temporariamente indisponível para análise profunda.";
-    }
-    return "Erro ao processar análise. Verifique se os dados do treino estão completos.";
+    console.error("Gemini Analysis Error:", error);
+    // Se o chat funciona e este não, o problema costuma ser o formato do prompt ou bloqueio de segurança
+    return `Ocorreu um erro na análise: ${error.message?.includes('safety') ? 'Conteúdo retido por filtros de segurança.' : 'Serviço temporariamente instável.'}`;
   }
 };
 
@@ -62,15 +58,15 @@ export const askCoachAboutWorkout = async (message: string, workout: Workout, pr
     const chat = ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: `Você é o Coach de Corrida do ${profile.name}. Você tem acesso aos dados do treino dele de ${workout.date} (${workout.type}, ${workout.distance}km, pace ${workout.avgPace}). Seja motivador mas técnico.`
+        systemInstruction: `Você é o Coach de Corrida do ${profile.name}. Você tem acesso aos dados do treino dele de ${workout.date}. Seja técnico e motivador.`
       }
     });
 
     const response = await chat.sendMessage({ message });
-    return response.text ?? "O Coach está processando sua dúvida...";
+    return response.text ?? "O Coach está pensando...";
   } catch (error) {
-    console.error("Erro no chat:", error);
-    return "Desculpe, tive um problema na conexão com o treinador.";
+    console.error("Chat Error:", error);
+    return "Erro ao conectar com o Coach no chat.";
   }
 };
 
@@ -81,23 +77,15 @@ export const generateTrainingPlan = async (profile: UserProfile, goals: Training
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: [{
-        role: 'user',
+      contents: {
         parts: [{
-          text: `
-            Crie um plano de treinamento de 1 semana para ${profile.name}.
-            METAS: ${goals.map(g => g.title).join(', ')}.
-            DADOS ATUAIS: VO2 ${profile.vo2Max}, Limiar ${profile.lactateThresholdPace}.
-            ESTADO ATUAL: ${history.length} treinos no histórico.
-
-            Formate como uma agenda semanal (Segunda a Domingo) com tipos de treino, distâncias e ritmos sugeridos.
-          `
+          text: `Crie um plano de 1 semana para ${profile.name} (VO2 ${profile.vo2Max}). Metas: ${goals.map(g => g.title).join(', ')}.`
         }]
-      }]
+      }
     });
-    return response.text ?? "Erro ao gerar o plano semanal.";
+    return response.text ?? "Erro ao gerar plano.";
   } catch (error) {
-    console.error("Erro ao gerar plano:", error);
-    return "Não foi possível criar o plano agora. Tente novamente mais tarde.";
+    console.error("Plan Gen Error:", error);
+    return "Erro ao gerar plano semanal.";
   }
 };
