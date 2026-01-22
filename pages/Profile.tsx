@@ -1,21 +1,23 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { UserProfile, HRZones, PersonalRecords } from '../types';
-import { X, User, Heart, Weight, Ruler, Activity, Camera, Trophy, Flame, Percent, Save, Edit2, RotateCcw, Loader2 } from 'lucide-react';
+import { X, User, Heart, Weight, Ruler, Activity, Camera, Trophy, Flame, Percent, Save, Edit2, RotateCcw, Loader2, Trash2, AlertTriangle } from 'lucide-react';
+import { deleteAllWorkouts } from '../services/supabaseService';
 
 interface ProfileProps {
   profile: UserProfile;
   onUpdate: (profile: UserProfile) => Promise<void>;
   onClose: () => void;
+  onDataCleared?: () => void;
 }
 
-const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose }) => {
+const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose, onDataCleared }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [formData, setFormData] = useState<UserProfile>(profile);
 
-  // Atualiza formData se profile mudar externamente (ex: carregamento inicial)
   useEffect(() => {
     setFormData(profile);
   }, [profile]);
@@ -41,6 +43,25 @@ const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose }) => {
       console.error("Erro ao salvar:", err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleClearData = async () => {
+    if (window.confirm("ATENÇÃO: Isso apagará TODOS os seus treinos, voltas e registros biomecânicos permanentemente. Esta ação não pode ser desfeita. Deseja continuar?")) {
+      setIsDeleting(true);
+      try {
+        const success = await deleteAllWorkouts();
+        if (success) {
+          alert("Todos os dados de treino foram removidos com sucesso.");
+          if (onDataCleared) onDataCleared();
+        } else {
+          alert("Houve um erro ao tentar apagar os dados no banco.");
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsDeleting(false);
+      }
     }
   };
 
@@ -128,7 +149,7 @@ const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Sidebar: Foto, Nome, Experiência e PRs */}
+        {/* Sidebar */}
         <div className="lg:col-span-4 space-y-6">
           <div className="glass p-8 rounded-3xl flex flex-col items-center text-center relative overflow-hidden">
             <div className="relative group mb-6">
@@ -143,46 +164,22 @@ const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose }) => {
                 <button 
                   onClick={() => fileInputRef.current?.click()}
                   className="absolute bottom-4 right-4 p-3.5 bg-emerald-500 text-white rounded-full shadow-lg hover:scale-110 transition-all z-10 border-4 border-slate-900"
-                  title="Alterar Foto"
                 >
                   <Camera size={20} />
                 </button>
               )}
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                className="hidden" 
-                accept="image/*" 
-                onChange={handlePhotoUpload} 
-              />
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
             </div>
 
             {isEditing ? (
               <div className="w-full space-y-4">
-                <div className="text-left">
-                  <label className="text-[10px] uppercase font-black text-slate-500 mb-1 block">Nome Completo</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className={inputClasses}
-                  />
-                </div>
-                <div className="text-left">
-                  <label className="text-[10px] uppercase font-black text-slate-500 mb-1 block">Nível</label>
-                  <select 
-                    name="experience"
-                    value={formData.experience}
-                    onChange={handleChange}
-                    className={inputClasses}
-                  >
-                     <option value="Iniciante">Iniciante</option>
-                     <option value="Intermediário">Intermediário</option>
-                     <option value="Avançado">Avançado</option>
-                     <option value="Elite">Elite</option>
-                  </select>
-                </div>
+                <input type="text" name="name" value={formData.name} onChange={handleChange} className={inputClasses} />
+                <select name="experience" value={formData.experience} onChange={handleChange} className={inputClasses}>
+                  <option value="Iniciante">Iniciante</option>
+                  <option value="Intermediário">Intermediário</option>
+                  <option value="Avançado">Avançado</option>
+                  <option value="Elite">Elite</option>
+                </select>
               </div>
             ) : (
               <>
@@ -190,50 +187,18 @@ const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose }) => {
                 <span className="px-4 py-1.5 bg-emerald-500/10 text-emerald-500 rounded-full text-[10px] font-black mt-3 uppercase tracking-widest">{formData.experience}</span>
               </>
             )}
-            
-            <div className="mt-8 w-full space-y-3">
-              <div className="flex flex-col gap-1 p-4 bg-slate-900/50 rounded-2xl border border-slate-800 text-left">
-                 <span className="text-slate-500 text-[10px] uppercase font-black">Data de Nascimento</span>
-                 {isEditing ? (
-                   <input
-                    type="date"
-                    name="birthDate"
-                    value={formData.birthDate}
-                    onChange={handleChange}
-                    className="bg-transparent text-white font-bold outline-none w-full"
-                   />
-                 ) : (
-                   <span className="font-bold">{formatDate(formData.birthDate)}</span>
-                 )}
-              </div>
-            </div>
           </div>
 
-          {/* Recordes Pessoais */}
           <div className="glass p-6 rounded-3xl">
             <h5 className="font-bold text-lg mb-6 flex items-center gap-2"><Trophy size={18} className="text-emerald-500" /> Recordes Pessoais</h5>
             <div className="grid grid-cols-2 gap-4">
-              {[
-                { label: '5 KM', key: 'k5' },
-                { label: '10 KM', key: 'k10' },
-                { label: '21 KM', key: 'k21' },
-                { label: '42 KM', key: 'k42' },
-              ].map(pr => (
-                <div key={pr.key} className={`p-4 rounded-2xl border transition-all ${isEditing ? 'bg-slate-900 border-emerald-500/30' : 'bg-slate-900/50 border-slate-800'} flex flex-col items-center`}>
+              {[{ label: '5 KM', key: 'k5' }, { label: '10 KM', key: 'k10' }, { label: '21 KM', key: 'k21' }, { label: '42 KM', key: 'k42' }].map(pr => (
+                <div key={pr.key} className="p-4 rounded-2xl border bg-slate-900/50 border-slate-800 flex flex-col items-center">
                   <span className="text-[10px] text-slate-500 uppercase font-black mb-1">{pr.label}</span>
                   {isEditing ? (
-                    <input
-                      type="text"
-                      name={`prs.${pr.key}`}
-                      value={formData.prs[pr.key as keyof PersonalRecords]}
-                      onChange={handleChange}
-                      placeholder="--:--"
-                      className="w-full bg-transparent text-center font-black text-emerald-500 outline-none"
-                    />
+                    <input type="text" name={`prs.${pr.key}`} value={formData.prs[pr.key as keyof PersonalRecords]} onChange={handleChange} className="w-full bg-transparent text-center font-black text-emerald-500 outline-none" />
                   ) : (
-                    <span className={`text-lg font-black ${formData.prs[pr.key as keyof PersonalRecords] === '--:--' ? 'text-slate-700' : 'text-white'}`}>
-                      {formData.prs[pr.key as keyof PersonalRecords]}
-                    </span>
+                    <span className="text-lg font-black">{formData.prs[pr.key as keyof PersonalRecords]}</span>
                   )}
                 </div>
               ))}
@@ -241,7 +206,7 @@ const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose }) => {
           </div>
         </div>
 
-        {/* Conteúdo Principal: Biometria, Limiares e Zonas de FC */}
+        {/* Main Content */}
         <div className="lg:col-span-8 space-y-6">
           <div className="glass p-8 rounded-3xl">
              <h5 className="font-bold text-lg mb-6 flex items-center gap-2"><Activity size={20} className="text-emerald-500" /> Biometria e Fisiologia</h5>
@@ -254,136 +219,63 @@ const Profile: React.FC<ProfileProps> = ({ profile, onUpdate, onClose }) => {
                  { label: 'FC Repouso', key: 'restingHR', icon: Heart, unit: 'bpm' },
                  { label: 'FC Máxima', key: 'maxHR', icon: Heart, unit: 'bpm' },
                ].map(bio => (
-                 <div key={bio.key} className={`p-5 rounded-2xl border transition-all ${isEditing ? 'bg-slate-900 border-emerald-500/30' : 'bg-slate-900/50 border-slate-800'}`}>
+                 <div key={bio.key} className="p-5 rounded-2xl border bg-slate-900/50 border-slate-800">
                     <div className="text-slate-500 mb-2 flex items-center gap-1.5 text-[10px] uppercase font-black">
-                      <bio.icon size={14} className={bio.key.includes('HR') ? 'text-rose-500' : ''} /> {bio.label}
+                      <bio.icon size={14} /> {bio.label}
                     </div>
                     {isEditing ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          step={bio.key === 'bodyFat' || bio.key === 'vo2Max' ? "0.1" : "1"}
-                          name={bio.key}
-                          value={formData[bio.key as keyof UserProfile] as number}
-                          onChange={handleChange}
-                          className="w-full bg-transparent text-2xl font-black text-emerald-500 outline-none"
-                        />
-                        <span className="text-xs text-slate-600">{bio.unit}</span>
-                      </div>
+                      <input type="number" name={bio.key} value={formData[bio.key as keyof UserProfile] as number} onChange={handleChange} className="w-full bg-transparent text-2xl font-black text-emerald-500 outline-none" />
                     ) : (
-                      <div className="text-2xl font-black">
-                        {formData[bio.key as keyof UserProfile] as number} 
-                        <span className="text-sm font-normal text-slate-500 ml-1">{bio.unit}</span>
-                      </div>
+                      <div className="text-2xl font-black">{formData[bio.key as keyof UserProfile] as number} <span className="text-sm font-normal text-slate-500 ml-1">{bio.unit}</span></div>
                     )}
                  </div>
                ))}
              </div>
-
-             <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-5 pt-8 border-t border-slate-800">
-               <div className={`p-5 rounded-2xl border transition-all ${isEditing ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-emerald-500/5 border-emerald-500/10'}`}>
-                 <div className="text-emerald-500/70 mb-2 flex items-center gap-1.5 text-[10px] uppercase font-black"><Flame size={16} /> Limiar Lactato (Pace)</div>
-                 {isEditing ? (
-                   <input
-                    type="text"
-                    name="lactateThresholdPace"
-                    value={formData.lactateThresholdPace}
-                    onChange={handleChange}
-                    className="text-3xl font-black bg-transparent text-emerald-500 outline-none w-full"
-                   />
-                 ) : (
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-emerald-400">{formData.lactateThresholdPace}</span>
-                        <span className="text-xs text-emerald-500/50 font-bold">min/km</span>
-                    </div>
-                 )}
-               </div>
-               <div className={`p-5 rounded-2xl border transition-all ${isEditing ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-emerald-500/5 border-emerald-500/10'}`}>
-                 <div className="text-emerald-500/70 mb-2 flex items-center gap-1.5 text-[10px] uppercase font-black"><Heart size={16} /> FC Limiar</div>
-                 {isEditing ? (
-                   <input
-                    type="number"
-                    name="lactateThresholdHR"
-                    value={formData.lactateThresholdHR}
-                    onChange={handleChange}
-                    className="text-3xl font-black bg-transparent text-emerald-500 outline-none w-full"
-                   />
-                 ) : (
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-emerald-400">{formData.lactateThresholdHR}</span>
-                        <span className="text-xs text-emerald-500/50 font-bold">bpm</span>
-                    </div>
-                 )}
-               </div>
-             </div>
           </div>
 
-          {/* Zonas de FC Automatizadas */}
           <div className="glass p-8 rounded-3xl">
-            <div className="flex justify-between items-center mb-8">
-              <h5 className="font-bold text-lg flex items-center gap-2"><Heart size={20} className="text-rose-500" /> Zonas de Frequência Cardíaca (Limiar de Lactato)</h5>
-              {isEditing && <span className="text-[10px] font-bold text-slate-500 uppercase">Edite os % para customizar</span>}
-            </div>
+            <h5 className="font-bold text-lg mb-8 flex items-center gap-2 text-rose-500"><Heart size={20} /> Zonas de Frequência Cardíaca</h5>
             <div className="space-y-3">
               {zones.map((zone) => {
                 const lowPct = zone.isZ5 ? formData.hrZones.z4High : (zone.key === 'z1Low' ? formData.hrZones.z1Low : formData.hrZones[zone.key as keyof HRZones] as number);
-                const highPct = zone.isZ5 ? 110 : (formData.hrZones[zone.nextKey as keyof HRZones] as number);
-                
                 const lowBpm = getBpm(lowPct);
-                const highBpm = getBpm(highPct);
-
                 return (
-                  <div key={zone.label} className={`flex items-center gap-5 p-4 rounded-2xl border transition-all ${isEditing ? 'bg-slate-900 border-emerald-500/30' : 'bg-slate-950/40 border-slate-800/50'}`}>
-                    <div className={`w-14 h-10 ${zone.color} rounded-xl flex items-center justify-center font-black text-white text-xs shadow-lg`}>
-                      {zone.label}
-                    </div>
+                  <div key={zone.label} className="flex items-center gap-5 p-4 rounded-2xl border bg-slate-950/40 border-slate-800/50">
+                    <div className={`w-14 h-10 ${zone.color} rounded-xl flex items-center justify-center font-black text-white text-xs shadow-lg`}>{zone.label}</div>
                     <div className="flex-1">
                       <div className="flex justify-between items-center">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            {isEditing ? (
-                              <div className="flex items-center gap-1">
-                                {!zone.isZ5 && zone.key === 'z1Low' ? (
-                                  <input 
-                                    type="number" 
-                                    value={formData.hrZones.z1Low}
-                                    onChange={(e) => handleChange({ target: { name: 'hrZones.z1Low', value: e.target.value, type: 'number' }} as any)}
-                                    className="bg-slate-800 border border-emerald-500/30 rounded px-1.5 py-0.5 text-xs font-bold text-emerald-400 w-12 outline-none"
-                                  />
-                                ) : (
-                                  <span className="text-xs font-bold text-slate-400">{lowPct}%</span>
-                                )}
-                                <span>-</span>
-                                {!zone.isZ5 ? (
-                                  <input 
-                                    type="number" 
-                                    value={formData.hrZones[zone.nextKey as keyof HRZones] as number}
-                                    onChange={(e) => handleChange({ target: { name: `hrZones.${zone.nextKey}`, value: e.target.value, type: 'number' }} as any)}
-                                    className="bg-slate-800 border border-emerald-500/30 rounded px-1.5 py-0.5 text-xs font-bold text-emerald-400 w-12 outline-none"
-                                  />
-                                ) : (
-                                  <span className="text-xs font-bold text-slate-400">MAX</span>
-                                )}
-                                <span className="text-[10px] text-slate-600 font-bold">%</span>
-                              </div>
-                            ) : (
-                              <span className="text-xs font-black text-slate-500">{zone.isZ5 ? `> ${lowPct}%` : `${lowPct}% - ${highPct}%`}</span>
-                            )}
-                          </div>
-                          <span className="text-base font-bold text-slate-200">
-                             {zone.isZ5 ? `> ${lowBpm}` : `${lowBpm} - ${highBpm}`} <span className="text-[10px] text-slate-500 font-normal ml-1 tracking-tighter">bpm</span>
-                          </span>
-                        </div>
+                        <span className="text-base font-bold text-slate-200">{zone.isZ5 ? `> ${lowBpm}` : `${lowBpm} bpm+`}</span>
                         <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{zone.desc}</span>
-                      </div>
-                      <div className="w-full h-1 bg-slate-800 mt-2 rounded-full overflow-hidden">
-                        <div className={`h-full ${zone.color} opacity-40`} style={{ width: '100%' }}></div>
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
+          </div>
+
+          {/* Zona de Perigo */}
+          <div className="p-8 rounded-[2.5rem] border-2 border-dashed border-rose-500/20 bg-rose-500/5 mt-10 space-y-4">
+             <div className="flex items-center gap-3 text-rose-500">
+                <AlertTriangle size={24} />
+                <h5 className="font-black uppercase tracking-tighter text-xl">Zona de Perigo</h5>
+             </div>
+             <p className="text-slate-400 text-sm">Esta seção contém ações destrutivas. Use com extrema cautela.</p>
+             
+             <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-6 bg-slate-950/50 rounded-3xl border border-rose-500/10">
+                <div>
+                   <h6 className="font-bold text-white uppercase text-xs">Apagar Histórico de Treinos</h6>
+                   <p className="text-[10px] text-slate-500 font-medium">Remove permanentemente todos os arquivos e análises das tabelas runs, laps e records.</p>
+                </div>
+                <button 
+                  onClick={handleClearData}
+                  disabled={isDeleting}
+                  className="w-full md:w-auto flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-rose-900/20 disabled:opacity-50"
+                >
+                  {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  {isDeleting ? 'Apagando...' : 'Apagar Tudo'}
+                </button>
+             </div>
           </div>
         </div>
       </div>

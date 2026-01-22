@@ -107,7 +107,12 @@ const App: React.FC = () => {
     if (dbConnected) await saveProfile(updatedProfile);
   };
 
-  // Metas
+  const handleDataCleared = () => {
+    setWorkouts([]);
+    setShowProfile(false);
+    setActiveTab('dashboard');
+  };
+
   const handleAddGoal = async (newGoal: TrainingGoal) => {
     setGoals([newGoal, ...goals]);
     if (dbConnected) {
@@ -129,7 +134,6 @@ const App: React.FC = () => {
     if (dbConnected) await deleteGoalDb(id);
   };
 
-  // Provas
   const handleAddRace = async (newRace: Race) => {
     setRaces([...races, newRace]);
     if (dbConnected) {
@@ -152,7 +156,7 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
-    if (showProfile) return <Profile profile={profile} onUpdate={handleUpdateProfile} onClose={() => setShowProfile(false)} />;
+    if (showProfile) return <Profile profile={profile} onUpdate={handleUpdateProfile} onClose={() => setShowProfile(false)} onDataCleared={handleDataCleared} />;
     if (isLoading) return <div className="flex flex-col items-center justify-center h-[60vh] gap-4 text-slate-500"><Loader2 size={40} className="animate-spin text-emerald-500" /><p className="animate-pulse">Sincronizando dados...</p></div>;
 
     return (

@@ -22,14 +22,10 @@ export const getSupabase = (): SupabaseClient | null => {
 
 const isUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-/**
- * Converte um timestamp UTC para uma string de data YYYY-MM-DD no fuso de Manaus.
- */
 const toManausDate = (isoString: string): string => {
   if (!isoString) return '';
   try {
     const date = new Date(isoString);
-    // en-CA retorna YYYY-MM-DD
     return new Intl.DateTimeFormat('en-CA', { 
       timeZone: 'America/Manaus', 
       year: 'numeric', 
@@ -183,11 +179,13 @@ export const fetchWorkouts = async (): Promise<Workout[]> => {
   const supabase = getSupabase();
   if (!supabase) return [];
   try {
-    const { data: runsData } = await supabase.from('runs').select('*').order('date', { ascending: false });
-    if (!runsData) return [];
-    return runsData.map((row: any) => ({
+    const { data: runsData, error } = await supabase.from('runs').select('*').order('date', { ascending: false });
+    if (error) {
+      console.error("Erro ao buscar treinos:", error);
+      return [];
+    }
+    return (runsData || []).map((row: any) => ({
       id: row.id,
-      // CRÍTICO: Usar a nova função toManausDate para garantir o dia correto em Manaus
       date: row.date ? toManausDate(row.date) : '',
       title: row.filename ? row.filename.replace('.md', '').replace(/_/g, ' ') : 'Treino',
       type: 'Rodagem',
@@ -200,4 +198,35 @@ export const fetchWorkouts = async (): Promise<Workout[]> => {
       aiAnalysis: row.ai_analysis
     }));
   } catch (error) { return []; }
+};
+
+/**
+ * Apaga todos os treinos de forma definitiva.
+ * Usa um filtro dummy 'neq 000...' que o PostgREST aceita como 'deletar todos' 
+ * se as permissões de RLS permitirem a deleção.
+ */
+export const deleteAllWorkouts = async (): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+
+  try {
+    // 1. Apaga registros dependentes (biomecânica)
+    await supabase.from('run_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    
+    // 2. Apaga voltas (laps)
+    await supabase.from('run_laps').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    
+    // 3. Apaga a tabela principal (runs)
+    const { error } = await supabase.from('runs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    
+    if (error) {
+      console.error("Erro Supabase ao deletar Runs:", error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Erro crítico ao deletar treinos:", error);
+    return false;
+  }
 };
