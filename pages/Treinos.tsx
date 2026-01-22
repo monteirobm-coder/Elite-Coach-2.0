@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ChevronRight, 
@@ -47,10 +48,15 @@ const MONTHS = [
   { value: '11', label: 'Dezembro' },
 ];
 
+/**
+ * Função simplificada que trata a data recebida YYYY-MM-DD como literal local.
+ */
 const parseLocalDate = (dateStr: string) => {
-  if (!dateStr) return new Date();
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return new Date(year, month - 1, day);
+  if (!dateStr || dateStr === 'Invalid Date') return new Date();
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return new Date();
+  // New Date(Y, M, D) cria no fuso local do navegador preservando o dia literal
+  return new Date(parts[0], parts[1] - 1, parts[2]);
 };
 
 const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile }) => {
@@ -158,7 +164,6 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-start relative max-w-[1600px] mx-auto">
-      {/* Lista de Treinos */}
       <div className={`space-y-4 ${selectedWorkout ? 'hidden lg:block' : 'block'}`}>
         <div className="space-y-2 mb-4">
           <div className="relative">
@@ -242,7 +247,6 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
         </div>
       </div>
 
-      {/* Detalhes do Treino Selecionado */}
       <div className={`sticky top-20 lg:top-24 ${selectedWorkout ? 'block' : 'hidden lg:block'}`}>
         {selectedWorkout ? (
           <div className="glass rounded-[2.5rem] overflow-hidden flex flex-col max-h-[88vh] shadow-2xl border-white/5">
@@ -287,8 +291,6 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
             </div>
 
             <div className="p-5 lg:p-7 space-y-6 lg:space-y-8 bg-slate-900/30 overflow-y-auto custom-scrollbar flex-1">
-              
-              {/* Dinâmicas Médias da Atividade - AGORA ANTES DAS VOLTAS */}
               {selectedWorkout.biomechanics && (
                 <div className="space-y-3">
                   <h5 className="font-black text-[9px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]">
@@ -315,7 +317,6 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
                 </div>
               )}
 
-              {/* Detalhamento de Voltas */}
               <div className="space-y-3">
                 <h5 className="font-black text-[9px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]">
                   <ListOrdered size={12} className="text-emerald-500" /> Laps / Detalhamento
@@ -360,7 +361,6 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
                 </div>
               </div>
 
-              {/* Seção AI / Percepção */}
               <div className="pt-2">
                 {isLoadingInsights ? (
                   <div className="flex flex-col items-center justify-center py-10 text-slate-500 gap-3 bg-slate-900/40 rounded-3xl border border-white/5">

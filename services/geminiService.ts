@@ -1,5 +1,56 @@
-import { GoogleGenAI } from "@google/genai";
-import { Workout, UserProfile, TrainingGoal } from "../types";
+
+import { GoogleGenAI, Type } from "@google/genai";
+import { Workout, UserProfile, TrainingGoal, Race } from "../types";
+
+/**
+ * Busca provas de rua em Manaus/AM para os próximos 4 meses usando Google Search.
+ */
+export const searchManausRaces = async (): Promise<{ races: Partial<Race>[], sources: any[] }> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const today = new Date();
+  const fourMonthsLater = new Date();
+  fourMonthsLater.setMonth(today.getMonth() + 4);
+
+  const dateRange = `de ${today.toLocaleDateString('pt-BR')} até ${fourMonthsLater.toLocaleDateString('pt-BR')}`;
+  
+  const prompt = `
+    Pesquise corridas de rua, maratonas e eventos de atletismo oficiais que acontecerão em Manaus/AM no período ${dateRange}.
+    
+    INSTRUÇÕES:
+    1. Retorne APENAS um array JSON válido.
+    2. Cada objeto deve ter: "name" (nome da prova), "date" (data no formato YYYY-MM-DD), "distance" (ex: 5km, 10km, 21km), "location" (específico se disponível), e "status" (sempre "Interessado").
+    3. Se encontrar o link de inscrição, mencione-o no nome ou local.
+    
+    Formato esperado:
+    [
+      {"name": "Maratona de Manaus", "date": "2025-10-20", "distance": "42km", "location": "Ponta Negra", "status": "Interessado"}
+    ]
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        // Forçamos o modelo a focar em precisão de datas e locais
+        systemInstruction: "Você é um assistente especializado em eventos esportivos na região Norte do Brasil. Sua tarefa é encontrar datas precisas de corridas em Manaus.",
+      },
+    });
+
+    const text = response.text || "[]";
+    const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    
+    // Tenta extrair o JSON do texto (o modelo pode colocar markdown)
+    const jsonMatch = text.match(/\[.*\]/s);
+    const races = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+
+    return { races, sources };
+  } catch (error) {
+    console.error("Search Races Error:", error);
+    return { races: [], sources: [] };
+  }
+};
 
 /**
  * Realiza análise profunda de biomecânica e fisiologia cruzando dados técnicos com percepção do usuário.

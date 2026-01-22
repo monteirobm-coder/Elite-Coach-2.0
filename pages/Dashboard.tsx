@@ -11,6 +11,17 @@ import {
 import { Workout, TrainingGoal, UserProfile } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+/**
+ * Parsing literal YYYY-MM-DD para o fuso local preservando o dia.
+ */
+const parseLocalDate = (dateStr: string) => {
+  if (!dateStr || dateStr === 'Invalid Date') return new Date();
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return new Date();
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+};
+
+// Fix: Defined DashboardProps interface which was missing and causing a reference error.
 interface DashboardProps {
   workouts: Workout[];
   goals: TrainingGoal[];
@@ -18,11 +29,14 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ workouts, goals, profile }) => {
-  const chartData = [...workouts].reverse().map(w => ({
-    name: w.date.split('-')[2] + '/' + w.date.split('-')[1],
-    load: w.trainingLoad || 0,
-    km: w.distance || 0
-  }));
+  const chartData = [...workouts].reverse().map(w => {
+    const d = parseLocalDate(w.date);
+    return {
+      name: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+      load: w.trainingLoad || 0,
+      km: w.distance || 0
+    };
+  });
 
   const totalKm = workouts.reduce((acc, curr) => acc + (curr.distance || 0), 0);
   const lastWorkout = workouts[0];
@@ -77,7 +91,6 @@ const Dashboard: React.FC<DashboardProps> = ({ workouts, goals, profile }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Charts - Fix width with min-w-0 on parent and min-h for container */}
         <div className="lg:col-span-2 glass p-6 rounded-2xl min-w-0">
           <div className="flex justify-between items-center mb-6">
             <h4 className="font-semibold text-lg">Histórico de Carga</h4>
@@ -114,7 +127,6 @@ const Dashboard: React.FC<DashboardProps> = ({ workouts, goals, profile }) => {
           </div>
         </div>
 
-        {/* Goals Progress */}
         <div className="glass p-6 rounded-2xl flex flex-col">
           <div className="flex justify-between items-center mb-6">
             <h4 className="font-semibold text-lg">Metas Ativas</h4>
@@ -133,7 +145,7 @@ const Dashboard: React.FC<DashboardProps> = ({ workouts, goals, profile }) => {
                     style={{ width: `${goal.progress}%` }}
                   />
                 </div>
-                <p className="text-xs text-slate-500">Alvo: {goal.targetValue} em {new Date(goal.targetDate).toLocaleDateString()}</p>
+                <p className="text-xs text-slate-500">Alvo: {goal.targetValue} em {parseLocalDate(goal.targetDate).toLocaleDateString('pt-BR')}</p>
               </div>
             ))}
           </div>

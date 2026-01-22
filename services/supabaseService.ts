@@ -22,6 +22,25 @@ export const getSupabase = (): SupabaseClient | null => {
 
 const isUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
+/**
+ * Converte um timestamp UTC para uma string de data YYYY-MM-DD no fuso de Manaus.
+ */
+const toManausDate = (isoString: string): string => {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    // en-CA retorna YYYY-MM-DD
+    return new Intl.DateTimeFormat('en-CA', { 
+      timeZone: 'America/Manaus', 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit' 
+    }).format(date);
+  } catch (e) {
+    return isoString.split('T')[0];
+  }
+};
+
 export const fetchLatestProfile = async (): Promise<UserProfile | null> => {
   const supabase = getSupabase();
   if (!supabase) return null;
@@ -30,8 +49,8 @@ export const fetchLatestProfile = async (): Promise<UserProfile | null> => {
     if (error || !data) return null;
     return {
       name: data.name || 'Atleta',
-      birthDate: data.birth_date || '1990-01-01',
-      age: 42, // O cálculo real pode ser feito aqui
+      birthDate: data.birth_date ? data.birth_date.split('T')[0] : '1982-05-21',
+      age: 42,
       weight: parseFloat(data.weight) || 0,
       height: parseFloat(data.height) || 0,
       bodyFat: parseFloat(data.body_fat) || 0,
@@ -72,9 +91,6 @@ export const saveProfile = async (profile: UserProfile): Promise<boolean> => {
   } catch (error) { return false; }
 };
 
-/**
- * TRAINING GOALS CRUD
- */
 export const fetchGoals = async (): Promise<TrainingGoal[]> => {
   const supabase = getSupabase();
   if (!supabase) return [];
@@ -84,7 +100,7 @@ export const fetchGoals = async (): Promise<TrainingGoal[]> => {
     return (data || []).map(row => ({
       id: row.id,
       title: row.title,
-      targetDate: row.target_date,
+      targetDate: row.target_date ? row.target_date.split('T')[0] : '',
       targetValue: row.target_value,
       targetDistance: parseFloat(row.target_distance),
       targetPace: row.target_pace,
@@ -113,16 +129,13 @@ export const upsertGoal = async (goal: TrainingGoal): Promise<boolean> => {
 
 export const deleteGoalDb = async (id: string): Promise<boolean> => {
   const supabase = getSupabase();
-  if (!supabase && isUUID(id)) return false;
+  if (!supabase || !isUUID(id)) return false;
   try {
     const { error } = await supabase.from('training_goals').delete().eq('id', id);
     return !error;
   } catch (error) { return false; }
 };
 
-/**
- * RACES CRUD
- */
 export const fetchRaces = async (): Promise<Race[]> => {
   const supabase = getSupabase();
   if (!supabase) return [];
@@ -132,7 +145,7 @@ export const fetchRaces = async (): Promise<Race[]> => {
     return (data || []).map(row => ({
       id: row.id,
       name: row.name,
-      date: row.date,
+      date: row.date ? row.date.split('T')[0] : '',
       distance: row.distance,
       location: row.location,
       status: row.status
@@ -166,9 +179,6 @@ export const deleteRaceDb = async (id: string): Promise<boolean> => {
   } catch (error) { return false; }
 };
 
-/**
- * WORKOUTS (REDUCED FOR BREVITY)
- */
 export const fetchWorkouts = async (): Promise<Workout[]> => {
   const supabase = getSupabase();
   if (!supabase) return [];
@@ -177,14 +187,17 @@ export const fetchWorkouts = async (): Promise<Workout[]> => {
     if (!runsData) return [];
     return runsData.map((row: any) => ({
       id: row.id,
-      date: row.date,
-      title: row.filename || 'Treino',
+      // CRÍTICO: Usar a nova função toManausDate para garantir o dia correto em Manaus
+      date: row.date ? toManausDate(row.date) : '',
+      title: row.filename ? row.filename.replace('.md', '').replace(/_/g, ' ') : 'Treino',
       type: 'Rodagem',
       distance: parseFloat(row.distance_km) || 0,
-      duration: '00:00:00',
+      duration: row.duration || '00:00:00',
       avgPace: '0:00',
       avgHR: row.avg_heart_rate || 0,
       trainingLoad: row.training_load || 0,
+      maxHR: row.max_heart_rate,
+      aiAnalysis: row.ai_analysis
     }));
   } catch (error) { return []; }
 };
