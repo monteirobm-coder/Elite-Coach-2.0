@@ -22,6 +22,60 @@ export const getSupabase = (): SupabaseClient | null => {
 
 const isUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
+/**
+ * Converte segundos ou strings de tempo para o formato HH:MM:SS
+ */
+const formatDuration = (val: any): string => {
+  if (!val) return '00:00:00';
+  if (typeof val === 'string' && val.includes(':')) {
+    const parts = val.split(':');
+    if (parts.length === 2) return `00:${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+    return val;
+  }
+  
+  const totalSeconds = parseInt(val);
+  if (isNaN(totalSeconds)) return '00:00:00';
+
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+};
+
+/**
+ * Converte duração para segundos totais.
+ */
+const toSeconds = (val: any): number => {
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const parts = val.split(':').map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parseInt(val) || 0;
+  }
+  return 0;
+};
+
+/**
+ * Calcula o Pace (min/km) baseado em tempo e distância.
+ */
+const calculatePace = (timeVal: any, distanceKm: number): string => {
+  if (!distanceKm || distanceKm <= 0) return '--:--';
+  const totalSeconds = toSeconds(timeVal);
+  if (totalSeconds <= 0) return '--:--';
+
+  const secondsPerKm = totalSeconds / distanceKm;
+  const mins = Math.floor(secondsPerKm / 60);
+  const secs = Math.round(secondsPerKm % 60);
+  
+  if (mins > 59) return '--:--';
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+};
+
+/**
+ * Converte um timestamp UTC para string YYYY-MM-DD no fuso de Manaus.
+ */
 const toManausDate = (isoString: string): string => {
   if (!isoString) return '';
   try {
@@ -83,6 +137,93 @@ export const saveProfile = async (profile: UserProfile): Promise<boolean> => {
       experience: profile.experience,
       photo_url: profile.photoUrl
     }]);
+    return !error;
+  } catch (error) { return false; }
+};
+
+export const fetchWorkouts = async (): Promise<Workout[]> => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  try {
+    const { data: runsData, error: runsError } = await supabase
+      .from('runs')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (runsError) throw runsError;
+    if (!runsData || runsData.length === 0) return [];
+
+    const runIds = runsData.map(r => r.id);
+    const { data: lapsData, error: lapsError } = await supabase
+      .from('run_laps')
+      .select('*')
+      .in('run_id', runIds)
+      .order('lap_number', { ascending: true });
+
+    if (lapsError) console.error("Erro ao buscar voltas:", lapsError);
+
+    return runsData.map((row: any) => {
+      const workoutLaps = (lapsData || []).filter(l => l.run_id === row.id);
+      
+      const rawDuration = row.duration || row.total_timer_time || row.total_elapsed_time;
+      const duration = formatDuration(rawDuration);
+      let distance = parseFloat(row.distance_km || (row.total_distance ? row.total_distance / 1000 : 0));
+      const avgPace = calculatePace(rawDuration, distance);
+
+      return {
+        id: row.id,
+        date: row.date ? toManausDate(row.date) : '',
+        title: row.filename ? row.filename.replace('.md', '').replace(/_/g, ' ') : 'Treino',
+        type: 'Rodagem', 
+        distance: distance,
+        duration: duration,
+        avgPace: avgPace,
+        avgHR: row.avg_heart_rate || 0,
+        maxHR: row.max_heart_rate || 0,
+        trainingLoad: row.training_load || 0,
+        elevationGain: row.elevation_gain || 0,
+        aiAnalysis: row.ai_analysis,
+        biomechanics: {
+          cadence: row.avg_cadence || row.avg_running_cadence || 0,
+          verticalOscillation: row.avg_vertical_oscillation ? parseFloat((row.avg_vertical_oscillation / 10).toFixed(1)) : 0,
+          groundContactTime: row.avg_ground_contact_time || 0,
+          strideLength: row.avg_stride_length || 0
+        },
+        laps: workoutLaps.map((lap: any) => {
+          const lapDist = parseFloat(lap.distance_km || (lap.total_distance ? lap.total_distance / 1000 : 0));
+          const lapDur = lap.duration || lap.total_timer_time || lap.total_elapsed_time;
+          
+          return {
+            lapNumber: lap.lap_number,
+            // PRIORIDADE: usar lap_type conforme solicitado pelo usuário, fallback para step_type
+            stepType: lap.lap_type || lap.step_type,
+            distance: lapDist,
+            duration: formatDuration(lapDur),
+            avgPace: calculatePace(lapDur, lapDist),
+            avgHR: lap.avg_heart_rate,
+            maxHR: lap.max_heart_rate,
+            cadence: lap.avg_cadence || lap.avg_running_cadence,
+            strideLength: lap.avg_stride_length,
+            verticalOscillation: lap.avg_vertical_oscillation ? parseFloat((lap.avg_vertical_oscillation / 10).toFixed(1)) : 0,
+            verticalRatio: lap.avg_vertical_ratio,
+            groundContactTime: lap.avg_ground_contact_time
+          };
+        })
+      };
+    });
+  } catch (error) { 
+    console.error("fetchWorkouts error:", error);
+    return []; 
+  }
+};
+
+export const deleteAllWorkouts = async (): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  try {
+    await supabase.from('run_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('run_laps').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error } = await supabase.from('runs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     return !error;
   } catch (error) { return false; }
 };
@@ -173,60 +314,4 @@ export const deleteRaceDb = async (id: string): Promise<boolean> => {
     const { error } = await supabase.from('races').delete().eq('id', id);
     return !error;
   } catch (error) { return false; }
-};
-
-export const fetchWorkouts = async (): Promise<Workout[]> => {
-  const supabase = getSupabase();
-  if (!supabase) return [];
-  try {
-    const { data: runsData, error } = await supabase.from('runs').select('*').order('date', { ascending: false });
-    if (error) {
-      console.error("Erro ao buscar treinos:", error);
-      return [];
-    }
-    return (runsData || []).map((row: any) => ({
-      id: row.id,
-      date: row.date ? toManausDate(row.date) : '',
-      title: row.filename ? row.filename.replace('.md', '').replace(/_/g, ' ') : 'Treino',
-      type: 'Rodagem',
-      distance: parseFloat(row.distance_km) || 0,
-      duration: row.duration || '00:00:00',
-      avgPace: '0:00',
-      avgHR: row.avg_heart_rate || 0,
-      trainingLoad: row.training_load || 0,
-      maxHR: row.max_heart_rate,
-      aiAnalysis: row.ai_analysis
-    }));
-  } catch (error) { return []; }
-};
-
-/**
- * Apaga todos os treinos de forma definitiva.
- * Usa um filtro dummy 'neq 000...' que o PostgREST aceita como 'deletar todos' 
- * se as permissões de RLS permitirem a deleção.
- */
-export const deleteAllWorkouts = async (): Promise<boolean> => {
-  const supabase = getSupabase();
-  if (!supabase) return false;
-
-  try {
-    // 1. Apaga registros dependentes (biomecânica)
-    await supabase.from('run_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    
-    // 2. Apaga voltas (laps)
-    await supabase.from('run_laps').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    
-    // 3. Apaga a tabela principal (runs)
-    const { error } = await supabase.from('runs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    
-    if (error) {
-      console.error("Erro Supabase ao deletar Runs:", error);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Erro crítico ao deletar treinos:", error);
-    return false;
-  }
 };

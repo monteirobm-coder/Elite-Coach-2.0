@@ -17,7 +17,8 @@ import {
   CalendarDays,
   Filter,
   MessageSquareText,
-  ListOrdered
+  ListOrdered,
+  Clock
 } from 'lucide-react';
 import { Workout, UserProfile } from '../types';
 import { getCoachAnalysis, askCoachAboutWorkout } from '../services/geminiService';
@@ -48,14 +49,10 @@ const MONTHS = [
   { value: '11', label: 'Dezembro' },
 ];
 
-/**
- * Função simplificada que trata a data recebida YYYY-MM-DD como literal local.
- */
 const parseLocalDate = (dateStr: string) => {
   if (!dateStr || dateStr === 'Invalid Date') return new Date();
   const parts = dateStr.split('-').map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return new Date();
-  // New Date(Y, M, D) cria no fuso local do navegador preservando o dia literal
   return new Date(parts[0], parts[1] - 1, parts[2]);
 };
 
@@ -97,9 +94,6 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
       setChatMessages([]);
       setUserInput('');
       setUserPerception('');
-      if (window.innerWidth < 1024) {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
     }
   }, [selectedWorkout]);
 
@@ -123,7 +117,7 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
       setInsights(result);
     } catch (err) {
       console.error("Erro ao buscar insights:", err);
-      setInsights("Erro ao conectar com o Coach. Tente novamente em instantes.");
+      setInsights("Erro ao conectar com o Coach.");
     } finally {
       setIsLoadingInsights(false);
     }
@@ -160,10 +154,33 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
     }
   };
 
-  const selectClasses = "bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-[10px] font-bold text-slate-400 focus:ring-1 focus:ring-emerald-500 outline-none transition-all cursor-pointer appearance-none pr-8 relative";
+  // Helper para traduzir/estilizar o tipo de passo (Warmup, Cool down, Corrida, etc)
+  const renderStepType = (step?: string) => {
+    if (!step) return <span className="text-slate-700">--</span>;
+    const s = step.toLowerCase();
+    
+    // Mapeamento de tipos comuns e traduções
+    if (s.includes('aquecimento') || s.includes('warmup')) 
+      return <span className="text-blue-400 uppercase font-black text-[8px] bg-blue-500/10 px-1.5 py-0.5 rounded">Aquece</span>;
+    
+    if (s.includes('corrida') || s.includes('run') || s.includes('active')) 
+      return <span className="text-emerald-500 uppercase font-black text-[8px] bg-emerald-500/10 px-1.5 py-0.5 rounded">Corrida</span>;
+    
+    if (s.includes('recuperação') || s.includes('recuperacao') || s.includes('recovery')) 
+      return <span className="text-indigo-400 uppercase font-black text-[8px] bg-indigo-500/10 px-1.5 py-0.5 rounded">Recup</span>;
+    
+    if (s.includes('desaquecimento') || s.includes('cooldown') || s.includes('cool_down')) 
+      return <span className="text-slate-400 uppercase font-black text-[8px] bg-slate-500/10 px-1.5 py-0.5 rounded">Desaquece</span>;
+    
+    if (s.includes('tiro') || s.includes('interval')) 
+      return <span className="text-rose-500 uppercase font-black text-[8px] bg-rose-500/10 px-1.5 py-0.5 rounded">Tiro</span>;
+
+    return <span className="text-slate-500 uppercase font-black text-[8px] border border-slate-800 px-1.5 py-0.5 rounded">{step}</span>;
+  };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-start relative max-w-[1600px] mx-auto">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start max-w-[1600px] mx-auto pb-10">
+      {/* Lista de Treinos */}
       <div className={`space-y-4 ${selectedWorkout ? 'hidden lg:block' : 'block'}`}>
         <div className="space-y-2 mb-4">
           <div className="relative">
@@ -176,285 +193,225 @@ const Treinos: React.FC<TreinosProps> = ({ workouts: initialWorkouts, profile })
               className="w-full bg-slate-900/50 border border-slate-800/50 rounded-xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
             />
           </div>
-          
           <div className="flex gap-2">
-            <select 
-              value={filterMonth}
-              onChange={(e) => setFilterMonth(e.target.value)}
-              className={selectClasses}
-            >
-              {MONTHS.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
+            <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-[10px] font-bold text-slate-400 outline-none appearance-none pr-8 relative cursor-pointer">
+              {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
-
-            <select 
-              value={filterYear}
-              onChange={(e) => setFilterYear(e.target.value)}
-              className={selectClasses}
-            >
+            <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-[10px] font-bold text-slate-400 outline-none appearance-none pr-8 relative cursor-pointer">
               <option value="all">Anos</option>
-              {availableYears.map(year => (
-                <option key={year} value={year.toString()}>{year}</option>
-              ))}
+              {availableYears.map(year => <option key={year} value={year.toString()}>{year}</option>)}
             </select>
           </div>
         </div>
 
-        <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-200px)] pr-1 custom-scrollbar">
+        <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-250px)] pr-1 custom-scrollbar">
           {filteredWorkouts.length > 0 ? filteredWorkouts.map(workout => {
             const styles = getTypeStyles(workout.type);
             const Icon = styles.icon;
-            const workoutLocalDate = parseLocalDate(workout.date);
             return (
               <button
                 key={workout.id}
                 onClick={() => setSelectedWorkout(workout)}
-                className={`w-full text-left glass p-3 lg:p-4 rounded-2xl flex items-center justify-between group transition-all ${selectedWorkout?.id === workout.id ? 'ring-1 ring-emerald-500 bg-emerald-500/5 border-transparent' : 'hover:bg-slate-800/30'}`}
+                className={`w-full text-left glass p-4 rounded-2xl flex items-center justify-between group transition-all ${selectedWorkout?.id === workout.id ? 'ring-1 ring-emerald-500 bg-emerald-500/5' : 'hover:bg-slate-800/30'}`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${styles.bg} ${styles.color}`}>
-                    <Icon size={18} />
-                  </div>
+                  <div className={`p-2 rounded-lg ${styles.bg} ${styles.color}`}><Icon size={18} /></div>
                   <div>
-                    <div className="flex items-center gap-2">
-                       <span className="text-[11px] font-bold text-slate-200 tracking-wide">
-                         {workoutLocalDate.toLocaleDateString('pt-BR')}
-                       </span>
-                    </div>
-                    <div className="mt-0.5">
-                       <span className={`text-[8px] font-black uppercase tracking-[0.1em] ${styles.color}`}>
-                         {workout.type}
-                       </span>
-                    </div>
+                    <span className="text-[11px] font-bold text-slate-200 tracking-wide">{parseLocalDate(workout.date).toLocaleDateString('pt-BR')}</span>
+                    <div className="mt-0.5"><span className={`text-[8px] font-black uppercase tracking-[0.1em] ${styles.color}`}>{workout.type}</span></div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className="text-xs lg:text-sm font-black text-slate-100">{workout.avgPace}</p>
-                    <p className="text-[9px] text-slate-500 uppercase font-bold">{workout.distance.toFixed(2)} km</p>
+                    <p className="text-sm font-black text-slate-100">{workout.avgPace}</p>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <p className="text-[9px] text-slate-500 uppercase font-bold">{workout.distance.toFixed(2)} km</p>
+                      <span className="text-slate-700 text-[8px]">•</span>
+                      <p className="text-[9px] text-emerald-500/70 font-bold flex items-center gap-0.5"><Clock size={8} /> {workout.duration}</p>
+                    </div>
                   </div>
-                  <ChevronRight size={14} className={`text-slate-700 transition-all ${selectedWorkout?.id === workout.id ? 'text-emerald-500 rotate-90 lg:rotate-0' : 'group-hover:text-slate-500'}`} />
+                  <ChevronRight size={14} className="text-slate-700" />
                 </div>
               </button>
             );
           }) : (
             <div className="p-8 text-center text-slate-600 glass rounded-3xl border-dashed border border-slate-800">
               <Activity className="mx-auto opacity-10 mb-3" size={24} />
-              <p className="text-xs font-bold">Nenhum treino</p>
+              <p className="text-xs font-bold">Nenhum treino encontrado</p>
             </div>
           )}
         </div>
       </div>
 
-      <div className={`sticky top-20 lg:top-24 ${selectedWorkout ? 'block' : 'hidden lg:block'}`}>
+      {/* Detalhes do Treino */}
+      <div className={`${selectedWorkout ? 'block' : 'hidden lg:block'}`}>
         {selectedWorkout ? (
-          <div className="glass rounded-[2.5rem] overflow-hidden flex flex-col max-h-[88vh] shadow-2xl border-white/5">
-            <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 p-5 lg:p-7 border-b border-white/5">
-              <button 
-                onClick={() => setSelectedWorkout(null)}
-                className="lg:hidden flex items-center gap-2 text-slate-500 mb-4 text-[10px] font-bold uppercase tracking-widest"
-              >
-                <ArrowLeft size={14} /> Voltar
-              </button>
-              
-              <div className="flex justify-between items-start mb-5 lg:mb-8">
-                <div className="space-y-0.5">
-                  <p className="text-emerald-500/60 text-[9px] lg:text-[11px] font-black tracking-widest uppercase">
-                    {parseLocalDate(selectedWorkout.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
-                  </p>
-                  <h3 className="text-xl lg:text-3xl font-black text-white tracking-tighter uppercase leading-none">{selectedWorkout.type}</h3>
+          <div className="glass rounded-[2.5rem] overflow-hidden flex flex-col max-h-[88vh] shadow-2xl">
+            <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 p-6 border-b border-white/5">
+              <button onClick={() => setSelectedWorkout(null)} className="lg:hidden flex items-center gap-2 text-slate-500 mb-4 text-[10px] font-bold uppercase"><ArrowLeft size={14} /> Voltar</button>
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <p className="text-emerald-500/60 text-[10px] font-black uppercase tracking-widest">{parseLocalDate(selectedWorkout.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{selectedWorkout.type}</h3>
                 </div>
-                <div className="bg-slate-950/50 px-3 py-1.5 rounded-full border border-white/5">
-                   <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{selectedWorkout.duration}</p>
+                <div className="bg-slate-950/50 px-4 py-1.5 rounded-full border border-white/5 shadow-inner">
+                  <p className="text-[11px] font-black text-emerald-400 uppercase tracking-widest">{selectedWorkout.duration}</p>
                 </div>
               </div>
-              
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-3">
-                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5 flex flex-col justify-center">
-                  <p className="text-[7px] lg:text-[9px] text-slate-500 uppercase font-black mb-0.5">Distância</p>
-                  <p className="text-base lg:text-xl font-black text-white">{selectedWorkout.distance.toFixed(2)}<span className="text-[10px] ml-0.5 font-normal text-slate-500">km</span></p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5">
+                  <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Distância</p>
+                  <p className="text-lg font-black">{selectedWorkout.distance.toFixed(2)}<span className="text-[10px] ml-0.5 opacity-50">km</span></p>
                 </div>
-                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5 flex flex-col justify-center">
-                  <p className="text-[7px] lg:text-[9px] text-slate-500 uppercase font-black mb-0.5">Pace Médio</p>
-                  <p className="text-base lg:text-xl font-black text-white">{selectedWorkout.avgPace}</p>
+                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5">
+                  <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Pace Médio</p>
+                  <p className="text-lg font-black">{selectedWorkout.avgPace}</p>
                 </div>
-                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5 flex flex-col justify-center">
-                  <p className="text-[7px] lg:text-[9px] text-slate-500 uppercase font-black mb-0.5">FC Média</p>
-                  <p className="text-base lg:text-xl font-black text-rose-500">{selectedWorkout.avgHR || '--'}</p>
+                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5">
+                  <p className="text-[8px] text-slate-500 uppercase font-black mb-1">FC Média</p>
+                  <p className="text-lg font-black text-rose-500">{selectedWorkout.avgHR || '--'}</p>
                 </div>
-                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5 flex flex-col justify-center">
-                  <p className="text-[7px] lg:text-[9px] text-slate-500 uppercase font-black mb-0.5">Carga</p>
-                  <p className="text-base lg:text-xl font-black text-emerald-400">{selectedWorkout.trainingLoad || '--'}</p>
+                <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5">
+                  <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Carga</p>
+                  <p className="text-lg font-black text-emerald-400">{selectedWorkout.trainingLoad || '--'}</p>
                 </div>
               </div>
             </div>
 
-            <div className="p-5 lg:p-7 space-y-6 lg:space-y-8 bg-slate-900/30 overflow-y-auto custom-scrollbar flex-1">
+            <div className="p-6 space-y-8 bg-slate-900/30 overflow-y-auto custom-scrollbar flex-1">
+              {/* Dinâmicas Médias */}
               {selectedWorkout.biomechanics && (
-                <div className="space-y-3">
-                  <h5 className="font-black text-[9px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]">
-                    <Layers size={12} className="text-emerald-500" /> Dinâmicas Médias
-                  </h5>
+                <div className="space-y-4">
+                  <h5 className="font-black text-[10px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]"><Layers size={14} className="text-emerald-500" /> Dinâmicas Médias</h5>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                    <div className="bg-slate-950/40 p-2.5 lg:p-3 rounded-xl border border-white/5">
-                      <p className="text-[7px] text-slate-500 uppercase font-black mb-0.5">Cadência</p>
-                      <p className="text-xs lg:text-sm font-black">{selectedWorkout.biomechanics.cadence || '--'} <span className="text-[7px] font-normal opacity-50 uppercase tracking-tighter">ppm</span></p>
+                    <div className="bg-slate-950/40 p-3 rounded-xl border border-white/5">
+                      <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Cadência</p>
+                      <p className="text-sm font-black">{selectedWorkout.biomechanics.cadence || '--'} ppm</p>
                     </div>
-                    <div className="bg-slate-950/40 p-2.5 lg:p-3 rounded-xl border border-white/5">
-                      <p className="text-[7px] text-slate-500 uppercase font-black mb-0.5">Oscilação</p>
-                      <p className="text-xs lg:text-sm font-black">{selectedWorkout.biomechanics.verticalOscillation || '--'} <span className="text-[7px] font-normal opacity-50 uppercase tracking-tighter">cm</span></p>
+                    <div className="bg-slate-950/40 p-3 rounded-xl border border-white/5">
+                      <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Oscilação</p>
+                      <p className="text-sm font-black">{selectedWorkout.biomechanics.verticalOscillation || '--'} cm</p>
                     </div>
-                    <div className="bg-slate-950/40 p-2.5 lg:p-3 rounded-xl border border-white/5">
-                      <p className="text-[7px] text-slate-500 uppercase font-black mb-0.5">Contato</p>
-                      <p className="text-xs lg:text-sm font-black">{selectedWorkout.biomechanics.groundContactTime || '--'} <span className="text-[7px] font-normal opacity-50 uppercase tracking-tighter">ms</span></p>
+                    <div className="bg-slate-950/40 p-3 rounded-xl border border-white/5">
+                      <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Contato</p>
+                      <p className="text-sm font-black">{selectedWorkout.biomechanics.groundContactTime || '--'} ms</p>
                     </div>
-                    <div className="bg-slate-950/40 p-2.5 lg:p-3 rounded-xl border border-white/5">
-                      <p className="text-[7px] text-slate-500 uppercase font-black mb-0.5">Passada</p>
-                      <p className="text-xs lg:text-sm font-black">{selectedWorkout.biomechanics.strideLength || '--'} <span className="text-[7px] font-normal opacity-50 uppercase tracking-tighter">m</span></p>
+                    <div className="bg-slate-950/40 p-3 rounded-xl border border-white/5">
+                      <p className="text-[8px] text-slate-500 uppercase font-black mb-1">Passada</p>
+                      <p className="text-sm font-black">{selectedWorkout.biomechanics.strideLength || '--'} m</p>
                     </div>
                   </div>
                 </div>
               )}
 
-              <div className="space-y-3">
-                <h5 className="font-black text-[9px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]">
-                  <ListOrdered size={12} className="text-emerald-500" /> Laps / Detalhamento
-                </h5>
-                <div className="overflow-x-auto glass rounded-2xl border border-white/5 bg-slate-950/30">
-                  <table className="w-full text-[9px] lg:text-[11px] text-left border-collapse min-w-[700px]">
-                    <thead className="bg-slate-900/60 text-slate-500 uppercase font-black tracking-widest border-b border-white/5">
-                      <tr>
-                        <th className="px-3 py-2.5">#</th>
-                        <th className="px-3 py-2.5">Dist.</th>
-                        <th className="px-3 py-2.5">Tempo</th>
-                        <th className="px-3 py-2.5">Pace</th>
-                        <th className="px-3 py-2.5 text-rose-500/80">FC</th>
-                        <th className="px-3 py-2.5 text-emerald-500/80">Cad.</th>
-                        <th className="px-3 py-2.5">Passada</th>
-                        <th className="px-3 py-2.5">Osc. V</th>
-                        <th className="px-3 py-2.5 text-indigo-400/80">Prop. V</th>
-                        <th className="px-3 py-2.5 text-amber-500/80">GCT</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {selectedWorkout.laps && selectedWorkout.laps.length > 0 ? selectedWorkout.laps.map((lap, idx) => (
-                        <tr key={idx} className="hover:bg-white/5 transition-colors font-mono">
-                          <td className="px-3 py-2 text-slate-600">{lap.lapNumber || idx + 1}</td>
-                          <td className="px-3 py-2 font-bold text-slate-300">{lap.distance.toFixed(2)}k</td>
-                          <td className="px-3 py-2 text-slate-400">{lap.duration}</td>
-                          <td className="px-3 py-2 font-black text-emerald-500/80">{lap.avgPace}</td>
-                          <td className="px-3 py-2 text-rose-400 font-bold">{lap.avgHR || '--'}</td>
-                          <td className="px-3 py-2 text-emerald-400/60">{lap.cadence || '--'}</td>
-                          <td className="px-3 py-2 text-slate-500">{lap.strideLength ? `${lap.strideLength.toFixed(2)}m` : '--'}</td>
-                          <td className="px-3 py-2 text-slate-500">{lap.verticalOscillation ? `${lap.verticalOscillation.toFixed(1)}c` : '--'}</td>
-                          <td className="px-3 py-2 text-indigo-400/70">{lap.verticalRatio ? `${lap.verticalRatio.toFixed(1)}%` : '--'}</td>
-                          <td className="px-3 py-2 text-amber-400/70">{lap.groundContactTime ? `${lap.groundContactTime}ms` : '--'}</td>
-                        </tr>
-                      )) : (
+              {/* Tabela de Voltas Completa */}
+              {selectedWorkout.laps && selectedWorkout.laps.length > 0 && (
+                <div className="space-y-4">
+                  <h5 className="font-black text-[10px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]"><ListOrdered size={14} className="text-emerald-500" /> Detalhes de Todas as Voltas ({selectedWorkout.laps.length})</h5>
+                  <div className="overflow-x-auto rounded-2xl border border-white/5 bg-slate-950/20">
+                    <table className="w-full text-[10px] text-left min-w-[1000px]">
+                      <thead className="bg-slate-900/80 text-slate-500 uppercase font-black">
                         <tr>
-                          <td colSpan={10} className="px-4 py-6 text-center text-slate-600 italic">Sem voltas registradas.</td>
+                          <th className="px-4 py-3 sticky left-0 bg-slate-900 z-10">#</th>
+                          <th className="px-4 py-3 text-emerald-400">Tipo</th>
+                          <th className="px-4 py-3">Dist</th>
+                          <th className="px-4 py-3 text-emerald-400">Tempo</th>
+                          <th className="px-4 py-3 text-emerald-400">Pace</th>
+                          <th className="px-4 py-3">FC Méd</th>
+                          <th className="px-4 py-3">Cadência</th>
+                          <th className="px-4 py-3 text-emerald-500/80">Osc.V (cm)</th>
+                          <th className="px-4 py-3 text-emerald-500/80">C.Solo (ms)</th>
+                          <th className="px-4 py-3 text-emerald-500/80">Passada (m)</th>
+                          <th className="px-4 py-3 text-emerald-500/80">Prop.V (%)</th>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {selectedWorkout.laps.map((lap, idx) => (
+                          <tr key={idx} className="hover:bg-white/5 transition-colors">
+                            <td className="px-4 py-3 font-black text-slate-400 sticky left-0 bg-slate-950/40">{lap.lapNumber}</td>
+                            <td className="px-4 py-3">{renderStepType(lap.stepType)}</td>
+                            <td className="px-4 py-3 font-bold">{lap.distance.toFixed(2)}k</td>
+                            <td className="px-4 py-3 font-mono font-bold text-emerald-400/80">{lap.duration}</td>
+                            <td className="px-4 py-3 font-black text-emerald-400">{lap.avgPace}</td>
+                            <td className="px-4 py-3 font-bold text-rose-500">{lap.avgHR || '--'}</td>
+                            <td className="px-4 py-3 text-slate-300 font-mono">{lap.cadence || '--'}</td>
+                            <td className="px-4 py-3 text-slate-400 font-mono">{lap.verticalOscillation || '--'}</td>
+                            <td className="px-4 py-3 text-slate-400 font-mono">{lap.groundContactTime || '--'}</td>
+                            <td className="px-4 py-3 text-slate-400 font-mono">{lap.strideLength || '--'}</td>
+                            <td className="px-4 py-3 text-slate-400 font-mono">{lap.verticalRatio ? `${lap.verticalRatio}%` : '--'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[8px] text-slate-600 italic">Nota: Foram carregadas {selectedWorkout.laps.length} voltas registradas no arquivo.</p>
                 </div>
-              </div>
+              )}
 
-              <div className="pt-2">
-                {isLoadingInsights ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-slate-500 gap-3 bg-slate-900/40 rounded-3xl border border-white/5">
-                    <Loader2 className="animate-spin text-emerald-500" size={24} />
-                    <p className="text-[8px] font-black tracking-[0.3em] uppercase animate-pulse">Consultando Coach AI...</p>
-                  </div>
-                ) : (insights || selectedWorkout.aiAnalysis) ? (
-                  <div className="space-y-6">
-                    <div className="bg-emerald-500/[0.03] rounded-[2rem] p-5 lg:p-7 border border-emerald-500/10 shadow-inner">
-                      <h5 className="text-emerald-500 font-black text-[9px] uppercase mb-4 flex items-center gap-2 tracking-[0.2em]">
-                        <Sparkles size={14} fill="currentColor" /> Feedback de Performance
-                      </h5>
-                      <div className="text-slate-300 text-xs lg:text-sm leading-relaxed whitespace-pre-wrap font-medium prose prose-invert max-w-none">
-                        {insights || selectedWorkout.aiAnalysis}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                       <h5 className="font-black text-[9px] text-slate-600 uppercase flex items-center gap-2 tracking-[0.2em]">
-                        <MessageSquareText size={12} className="text-emerald-500" /> Consultoria Técnica
-                      </h5>
-                      <div className="glass bg-slate-950/40 rounded-2xl overflow-hidden flex flex-col border border-white/5">
-                        <div className="p-4 max-h-[200px] overflow-y-auto space-y-3 custom-scrollbar text-xs">
-                          {chatMessages.length === 0 && (
-                            <p className="text-center text-slate-700 py-2 text-[10px] italic">Dúvidas sobre o pace ou biomecânica desta sessão?</p>
-                          )}
-                          {chatMessages.map((msg, idx) => (
-                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[90%] rounded-xl p-2.5 ${
-                                msg.role === 'user' 
-                                  ? 'bg-emerald-600/90 text-white shadow-lg' 
-                                  : 'bg-slate-800/80 text-slate-300 border border-white/5'
-                              }`}>
-                                <p className="leading-relaxed text-[11px]">{msg.text}</p>
-                              </div>
-                            </div>
-                          ))}
-                          <div ref={chatEndRef} />
-                        </div>
-
-                        <form onSubmit={handleSendMessage} className="p-2 bg-slate-900/80 border-t border-white/5 flex gap-2">
-                          <input 
-                            type="text" 
-                            value={userInput}
-                            onChange={(e) => setUserInput(e.target.value)}
-                            placeholder="Pergunta técnica..."
-                            className="flex-1 bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-[11px] outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
-                          />
-                          <button 
-                            type="submit"
-                            disabled={isSending || !userInput.trim()}
-                            className="bg-emerald-500 text-white p-2 rounded-xl hover:bg-emerald-400 disabled:opacity-20 transition-all"
-                          >
-                            <Send size={14} />
-                          </button>
-                        </form>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-5">
-                    <div className="bg-slate-950/30 p-5 rounded-3xl border border-white/5 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <MessageSquareText className="text-emerald-500" size={16} />
-                        <label className="text-[9px] font-black uppercase text-slate-500 tracking-widest">
-                          Como você se sentiu hoje?
-                        </label>
-                      </div>
-                      <textarea
-                        value={userPerception}
-                        onChange={(e) => setUserPerception(e.target.value)}
-                        placeholder="Ex: Perna pesada no km final. Tentei focar na cadência."
-                        className="w-full h-24 bg-slate-950/80 border border-white/5 rounded-2xl p-4 text-xs text-slate-300 outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all resize-none placeholder:text-slate-800"
-                      />
-                    </div>
-
+              {/* Análise da IA */}
+              <div className="space-y-4">
+                <h5 className="font-black text-[10px] text-slate-500 uppercase flex items-center gap-2 tracking-[0.2em]"><Sparkles size={14} className="text-emerald-500" /> Feedback do Coach</h5>
+                {!insights ? (
+                  <div className="p-6 bg-slate-950/40 rounded-[2rem] border border-white/5 text-center">
+                    <MessageSquareText className="mx-auto text-slate-700 mb-4 opacity-20" size={32} />
+                    <p className="text-[10px] font-bold text-slate-500 uppercase mb-4">Como você se sentiu hoje?</p>
+                    <textarea 
+                      value={userPerception} 
+                      onChange={(e) => setUserPerception(e.target.value)}
+                      placeholder="Ex: Senti pernas pesadas no início, mas o coração estabilizou bem..." 
+                      className="w-full bg-slate-900 border border-white/5 rounded-2xl p-4 text-xs text-white outline-none h-24 mb-4 focus:ring-1 focus:ring-emerald-500"
+                    />
                     <button 
                       onClick={() => handleFetchInsights(selectedWorkout)}
-                      disabled={!userPerception.trim()}
-                      className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800/50 disabled:text-slate-700 py-3.5 rounded-2xl font-black text-white text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-emerald-500/10 transition-all active:scale-[0.98]"
+                      disabled={isLoadingInsights}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all disabled:opacity-50"
                     >
-                      <Sparkles size={16} fill="currentColor" />
-                      Analisar Sessão
+                      {isLoadingInsights ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Analisar Performance'}
                     </button>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="bg-slate-950/60 p-6 rounded-[2rem] border border-emerald-500/10 shadow-lg prose prose-invert prose-xs max-w-none text-slate-300">
+                       <div className="flex items-center gap-2 mb-4 text-emerald-500 font-black uppercase text-[10px]">
+                         <Activity size={12}/> Análise Concluída
+                       </div>
+                       <div className="whitespace-pre-wrap">{insights}</div>
+                    </div>
+
+                    <div className="space-y-4 border-t border-white/5 pt-6">
+                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest px-2">Dúvidas sobre o treino?</p>
+                      <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar px-2">
+                         {chatMessages.map((msg, i) => (
+                           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                             <div className={`max-w-[85%] p-3 rounded-2xl text-xs ${msg.role === 'user' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                               {msg.text}
+                             </div>
+                           </div>
+                         ))}
+                      </div>
+                      <form onSubmit={handleSendMessage} className="flex gap-2">
+                        <input 
+                          type="text" 
+                          value={userInput}
+                          onChange={(e) => setUserInput(e.target.value)}
+                          placeholder="Pergunte ao coach..."
+                          className="flex-1 bg-slate-950 border border-white/5 rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <button type="submit" disabled={isSending} className="p-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-all disabled:opacity-50">
+                          {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 )}
               </div>
             </div>
           </div>
         ) : (
-          <div className="glass rounded-[3rem] h-[500px] hidden lg:flex flex-col items-center justify-center text-center p-12 text-slate-700 border-dashed border-2 border-slate-900/50">
-            <Activity size={40} className="opacity-10 mb-4" />
-            <h4 className="text-sm font-black uppercase tracking-[0.3em]">Nenhum Treino</h4>
-            <p className="max-w-[200px] text-[10px] mt-2 opacity-40 font-bold uppercase tracking-widest">Selecione uma atividade para iniciar o Coach.</p>
+          <div className="h-full flex flex-col items-center justify-center text-center p-10 bg-slate-900/20 rounded-[3rem] border-2 border-dashed border-slate-800">
+            <Activity size={48} className="text-slate-700 mb-6 opacity-20" />
+            <h4 className="text-slate-500 font-black uppercase tracking-[0.2em] text-sm">Selecione um Treino</h4>
+            <p className="text-slate-600 text-xs mt-2 max-w-xs">Escolha uma atividade na lista ao lado para ver a análise profunda do Coach AI.</p>
           </div>
         )}
       </div>
